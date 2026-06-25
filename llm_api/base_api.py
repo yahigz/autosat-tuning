@@ -3,7 +3,7 @@ import json
 import time
 
 import openai
-from autosat.prompting import build_structured_schema, build_tool_schema, parse_structured_response
+from prompting import build_structured_schema, build_tool_schema, parse_structured_response
 
 
 _JSON_OBJECT_FORMAT = {"type": "json_object"}

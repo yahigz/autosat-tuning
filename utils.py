@@ -264,7 +264,7 @@ def train_init(args):
         clean_files(folder_path=results_folder, mode="all")
     else:
         os.makedirs(results_folder)
-    copy_folder('./examples/EasySAT/original_EasySAT', args.batch_size, mode='eval', target_folder=easy_sat_folder)
+    copy_folder('solver/baseline', args.batch_size, mode='eval', target_folder=easy_sat_folder)
     clean_files(folder_path=easy_sat_folder, mode="exe")
     copy_folder(easy_sat_folder, args.batch_size)
     return

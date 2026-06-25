@@ -1,0 +1,44 @@
+# AutoSAT tuning configuration
+
+# --- Training ---
+iteration_num: 10
+batch_size: 4
+data_parallel_size: 2
+devoid_duplication: false
+timeout: 2                      # seconds per SAT instance (train)
+data_dir: "./temp/data_train"
+
+# --- Tasks ---
+optimize_tasks:
+  - bump_var_function
+  - restart_function
+
+task_selection_mode: random_one  # random_one | cycle
+rand_seed: 42
+
+# --- Baseline ---
+original: true                  # run original solver to measure baseline PAR-2
+# original_result: {time: 0, PAR-2: 0}  # use this instead if original: false
+
+# --- LLM ---
+llm_model: "claude-sonnet-4-6"
+api_base: ""
+api_key: ""
+use_structured: true
+
+# --- Template update during training ---
+template_update_strategy: none  # none | greedy_train | annealing
+
+# --- Evaluation ---
+run_eval: true
+eval_timeout: 5
+eval_data_dir: "./temp/data_eval"
+eval_parallel_size: 1
+keep_intermediate_results: false
+
+# --- Checkpointing ---
+resume_from_checkpoint: true
+
+# --- HTTP progress server ---
+enable_server: false            # set to true to enable dashboard at http://localhost:8080
+server_port: 8080

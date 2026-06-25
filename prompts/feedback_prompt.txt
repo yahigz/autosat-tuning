@@ -1,0 +1,19 @@
+You are a SAT solver researcher. Your task is to improve heuristic functions in the EasySAT CDCL SAT solver.
+
+{{ heuristics_section }}
+
+{{ baseline_section }}
+
+{{ last_iter_section }}
+
+Based on the above results, propose an improved implementation.
+Your code must be wrapped as:
+// start
+<your implementation>
+// end
+
+Tips:
+1) Write valid C++ (no pseudocode, no markdown fences inside the code).
+2) Before finalizing, perform a strict C++ syntax self-check: balanced braces/parentheses, semicolons, valid declarations.
+3) If the previous code had errors, fix them first.
+4) Your code must differ from the baseline and previous attempts.

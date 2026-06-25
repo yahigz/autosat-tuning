@@ -1,0 +1,19 @@
+# Minimal config for quick smoke testing (2 iterations, no eval)
+iteration_num: 2
+batch_size: 2
+data_parallel_size: 1
+timeout: 1
+data_dir: "./temp/data_train"
+
+optimize_tasks: [bump_var_function]
+task_selection_mode: random_one
+rand_seed: 42
+
+original: true
+llm_model: "claude-sonnet-4-6"
+use_structured: true
+temperature: 1.0
+
+template_update_strategy: none
+run_eval: false
+enable_server: false

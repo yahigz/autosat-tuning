@@ -1,0 +1,32 @@
+# Optimize all tasks with cycle selection + greedy writeback + dashboard
+iteration_num: 20
+batch_size: 4
+data_parallel_size: 2
+timeout: 2
+data_dir: "./temp/data_train"
+
+optimize_tasks:
+  - bump_var_function
+  - restart_function
+  - rephase_function
+  - restart_condition
+  - rephase_condition
+task_selection_mode: cycle
+rand_seed: 42
+
+original: true
+llm_model: "claude-sonnet-4-6"
+use_structured: true
+temperature: 1.0
+
+template_update_strategy: greedy_train
+
+run_eval: true
+eval_timeout: 10
+eval_data_dir: "./temp/data_eval"
+eval_parallel_size: 4
+keep_intermediate_results: false
+
+resume_from_checkpoint: true
+enable_server: true
+server_port: 8080

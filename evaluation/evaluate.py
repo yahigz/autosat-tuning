@@ -11,8 +11,8 @@ import math
 import warnings
 import sys
 
-from autosat.utils import revise_file, clean_files, collect_results_eval, copy_folder, get_temp_root
-from autosat.execution.execution_worker import ExecutionWorker
+from utils import revise_file, clean_files, collect_results_eval, copy_folder, get_temp_root
+from execution.execution_worker import ExecutionWorker
 
 
 def _enable_realtime_output():

@@ -1,0 +1,10 @@
+# Re-run evaluation stage on an existing training run (no LLM calls)
+eval_only_from_run: true
+run_id: ""              # ← paste your run_id here (e.g. run_20250618_120000_12345_abcd)
+
+eval_timeout: 5
+eval_data_dir: "./temp/data_eval"
+eval_parallel_size: 2
+keep_intermediate_results: false
+
+llm_model: "claude-sonnet-4-6"  # needed only to name result files
