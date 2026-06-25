@@ -1,0 +1,32 @@
+# All-tasks mode: LLM proposes code for ALL heuristics in a single call per iteration.
+# Best combined solver (lowest train PAR-2) is evaluated at the end.
+iteration_num: 10
+batch_size: 4
+data_parallel_size: 2
+timeout: 2
+data_dir: "./temp/data_train"
+
+optimize_tasks:
+  - bump_var_function
+  - restart_function
+  - rephase_function
+  - restart_condition
+  - rephase_condition
+
+task_selection_mode: all   # ← all tasks in one LLM call per iteration
+
+original: true
+llm_model: "claude-sonnet-4-6"
+use_structured: true
+temperature: 1.0
+
+template_update_strategy: none
+
+run_eval: true
+eval_timeout: 5
+eval_data_dir: "./temp/data_eval"
+eval_parallel_size: 2
+keep_intermediate_results: false
+
+resume_from_checkpoint: true
+enable_server: false

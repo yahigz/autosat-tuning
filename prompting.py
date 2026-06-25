@@ -147,34 +147,59 @@ def _format_heuristics_section(
     return "\n".join(lines).rstrip()
 
 
-def _format_baseline_section(task_name: str, baseline_par2: float | None, baseline_code: str) -> str:
+def _format_baseline_section(
+    task_name: str,
+    baseline_par2: float | None,
+    baseline_code: str | Mapping[str, str] = "",
+) -> str:
+    """Format baseline block for single task or all tasks (baseline_code is dict in 'all' mode)."""
     lines = ["=== Baseline (iteration 0) ==="]
     if baseline_par2 is not None:
         lines.append(f"PAR-2: {baseline_par2}")
-    lines.append(f"Task: {task_name}")
-    if baseline_code:
-        lines.append(f"Code:\n{baseline_code}")
+    if isinstance(baseline_code, Mapping):
+        for t, c in baseline_code.items():
+            if c:
+                lines.append(f"\n{t}:\n{c}")
+    else:
+        lines.append(f"Task: {task_name}")
+        if baseline_code:
+            lines.append(f"Code:\n{baseline_code}")
     return "\n".join(lines)
 
 
 def _format_last_iter_section(last_iter: Mapping[str, Any]) -> str:
+    """Format last-iteration block for single task or all tasks.
+
+    Single-task shape:  {par2, code, title, reason}
+    All-tasks shape:    {par2, implementations: [{task, code, title, reason}, ...]}
+    """
     lines = ["=== Last iteration result ==="]
     par2 = last_iter.get("par2")
     if par2 is not None:
         lines.append(f"PAR-2: {par2}")
-    title = str(last_iter.get("title", "")).strip()
-    reason = str(last_iter.get("reason", "")).strip()
-    code = str(last_iter.get("code", "")).strip()
-    if title:
-        lines.append(f"Title: {title}")
-    if reason:
-        lines.append(f"Reason: {reason}")
-    if code:
-        lines.append(f"Code:\n{code}")
+
+    impls = last_iter.get("implementations")
+    if impls:
+        for impl in impls:
+            t = impl.get("task", "")
+            title  = str(impl.get("title",  "") or "").strip()
+            reason = str(impl.get("reason", "") or "").strip()
+            code   = str(impl.get("code",   "") or "").strip()
+            lines.append(f"\n--- {t} ---")
+            if title:  lines.append(f"Title: {title}")
+            if reason: lines.append(f"Reason: {reason}")
+            if code:   lines.append(f"Code:\n{code}")
+    else:
+        title  = str(last_iter.get("title",  "") or "").strip()
+        reason = str(last_iter.get("reason", "") or "").strip()
+        code   = str(last_iter.get("code",   "") or "").strip()
+        if title:  lines.append(f"Title: {title}")
+        if reason: lines.append(f"Reason: {reason}")
+        if code:   lines.append(f"Code:\n{code}")
     return "\n".join(lines)
 
 
-def _format_structured_section(config_payload: Mapping[str, Any] | None, task_name: str) -> str:
+def _format_structured_section_single(task_name: str) -> str:
     return (
         "Return a valid JSON object with exactly these fields:\n"
         '  "code": string — complete C++ implementation to inject\n'
@@ -184,18 +209,41 @@ def _format_structured_section(config_payload: Mapping[str, Any] | None, task_na
     )
 
 
+def _format_structured_section_all(tasks: Sequence[str]) -> str:
+    task_list = ", ".join(f'"{t}"' for t in tasks)
+    return (
+        "Return a valid JSON object with this structure:\n"
+        '{\n'
+        '  "implementations": [\n'
+        '    {"task": "<name>", "code": "<C++ code>", "title": "<short name>", "reason": "<motivation>"},\n'
+        '    ...\n'
+        '  ]\n'
+        '}\n'
+        f'Include one entry for each of: {task_list}.\n'
+        "All fields in each entry are required. "
+        "If you have no improvement for a task, still include it with the baseline code."
+    )
+
+
 def build_prompt_text(
     base_prompt_text: str,
     task_name: str,
     baseline_par2: float | None = None,
-    baseline_code: str = "",
+    baseline_code: str | Mapping[str, str] = "",
     last_iter_result: Mapping[str, Any] | None = None,
     config_payload: Mapping[str, Any] | None = None,
     structured_output: bool = False,
     allowed_modules: Sequence[str] | None = None,
+    all_tasks_mode: bool = False,
 ) -> str:
-    modules = load_heuristic_modules(config_payload or {}, allowed_modules=allowed_modules or [task_name])
-    baseline_codes = {task_name: baseline_code} if baseline_code else {}
+    modules = load_heuristic_modules(
+        config_payload or {},
+        allowed_modules=allowed_modules if allowed_modules else ([task_name] if not all_tasks_mode else None),
+    )
+    baseline_codes: Mapping[str, str] = (
+        baseline_code if isinstance(baseline_code, Mapping)
+        else ({task_name: baseline_code} if baseline_code else {})
+    )
 
     heuristics_section = _format_heuristics_section(modules, baseline_codes)
     baseline_section = (
@@ -213,7 +261,11 @@ def build_prompt_text(
     rendered = Template(base_prompt_text).render(**context)
 
     if structured_output:
-        rendered = rendered.rstrip() + "\n\n" + _format_structured_section(config_payload, task_name)
+        if all_tasks_mode:
+            task_names = [m["name"] for m in modules]
+            rendered = rendered.rstrip() + "\n\n" + _format_structured_section_all(task_names)
+        else:
+            rendered = rendered.rstrip() + "\n\n" + _format_structured_section_single(task_name)
 
     return rendered
 
@@ -235,6 +287,59 @@ def parse_structured_response(content: str) -> Dict[str, str]:
     }
 
 
+def parse_multi_response(content: str, tasks: Sequence[str]) -> Dict[str, Dict[str, str]]:
+    """Parse a multi-task structured response.
+
+    Expected JSON shape:
+      {"implementations": [{"task": "...", "code": "...", "title": "...", "reason": "..."}, ...]}
+
+    Returns: {task_name: {code, title, reason}}
+    Missing or invalid tasks get empty strings.
+    """
+    empty = {t: {"code": "", "title": "", "reason": ""} for t in tasks}
+    try:
+        data = json.loads(content)
+    except Exception as exc:
+        print(f"[StructuredOutput][all] JSON parse error: {exc}. Raw: {content[:300]}", flush=True)
+        return empty
+
+    impls = data.get("implementations", [])
+    if not isinstance(impls, list):
+        print(f"[StructuredOutput][all] 'implementations' is not a list.", flush=True)
+        return empty
+
+    result: Dict[str, Dict[str, str]] = {}
+    for item in impls:
+        if not isinstance(item, dict):
+            continue
+        t = str(item.get("task", "") or "").strip()
+        if not t:
+            continue
+        result[t] = {
+            "code":   str(item.get("code",   "") or "").strip(),
+            "title":  str(item.get("title",  "") or "").strip(),
+            "reason": str(item.get("reason", "") or "").strip(),
+        }
+
+    for t in tasks:
+        if t not in result:
+            result[t] = {"code": "", "title": "", "reason": ""}
+    return result
+
+
+def get_code_from_text_all(raw_text: str, tasks: Sequence[str]) -> Dict[str, Dict[str, str]]:
+    """Extract per-task code from plain text using // start_TASK / // end_TASK markers."""
+    result: Dict[str, Dict[str, str]] = {}
+    for t in tasks:
+        pattern = re.compile(
+            r"//\s*start_" + re.escape(t) + r"\s*\n(.*?)\n//\s*end_" + re.escape(t),
+            re.DOTALL,
+        )
+        m = pattern.search(raw_text)
+        result[t] = {"code": m.group(1).strip() if m else "", "title": "", "reason": ""}
+    return result
+
+
 def build_tool_schema(config_payload: Mapping[str, Any] | None = None, task_name: str | None = None) -> Dict[str, Any]:
     """Anthropic tool_use schema for Eliza structured output."""
     return {
@@ -248,6 +353,68 @@ def build_tool_schema(config_payload: Mapping[str, Any] | None = None, task_name
                 "reason": {"type": "string", "description": "Brief motivation for the change."},
             },
             "required": ["code", "title", "reason"],
+        },
+    }
+
+
+def build_tool_schema_all(tasks: Sequence[str]) -> Dict[str, Any]:
+    """Anthropic tool_use schema for all-tasks mode (Eliza)."""
+    item_schema = {
+        "type": "object",
+        "properties": {
+            "task":   {"type": "string", "description": f"One of: {', '.join(tasks)}"},
+            "code":   {"type": "string", "description": "Complete C++ implementation."},
+            "title":  {"type": "string", "description": "Short change name."},
+            "reason": {"type": "string", "description": "Brief motivation."},
+        },
+        "required": ["task", "code", "title", "reason"],
+    }
+    return {
+        "name": "submit_all_heuristics",
+        "description": "Submit improved implementations for all heuristic functions.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "implementations": {
+                    "type": "array",
+                    "items": item_schema,
+                    "description": f"One entry per task: {', '.join(tasks)}",
+                }
+            },
+            "required": ["implementations"],
+        },
+    }
+
+
+def build_structured_schema_all(tasks: Sequence[str]) -> Dict[str, Any]:
+    """OpenAI json_schema for all-tasks mode."""
+    item_schema = {
+        "type": "object",
+        "properties": {
+            "task":   {"type": "string"},
+            "code":   {"type": "string"},
+            "title":  {"type": "string"},
+            "reason": {"type": "string"},
+        },
+        "required": ["task", "code", "title", "reason"],
+        "additionalProperties": False,
+    }
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "heuristic_code_response_all",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "implementations": {
+                        "type": "array",
+                        "items": item_schema,
+                    }
+                },
+                "required": ["implementations"],
+                "additionalProperties": False,
+            },
         },
     }
 

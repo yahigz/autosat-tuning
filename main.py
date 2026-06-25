@@ -20,6 +20,10 @@ from prompting import (
     build_prompt_text,
     load_prompt_text,
     parse_structured_response,
+    parse_multi_response,
+    get_code_from_text_all,
+    build_tool_schema_all,
+    build_structured_schema_all,
 )
 from execution.execution_worker import ExecutionWorker
 from evaluation.evaluate import evaluate
@@ -159,15 +163,21 @@ def update_solver_template(codes: dict[str, str]) -> None:
 # ---------------------------------------------------------------------------
 # Task selection
 # ---------------------------------------------------------------------------
+ALL_TASKS_SENTINEL = "__all__"
+
+
 def _task_for_iteration(task_sequence: list[str], selection_mode: str, iter_idx: int, rand_seed: int = 42) -> str:
+    """Return the task name for this iteration, or ALL_TASKS_SENTINEL when mode is 'all'."""
     if not task_sequence:
         raise ValueError("task_sequence must not be empty")
     mode = str(selection_mode or "random_one").strip().lower()
+    if mode == "all":
+        return ALL_TASKS_SENTINEL
     if mode == "random_one":
         return random.Random(int(rand_seed)).choice(task_sequence)
-    if mode in {"cycle", "sequential_all"}:
+    if mode in {"cycle"}:
         return task_sequence[iter_idx % len(task_sequence)]
-    raise ValueError(f"task_selection_mode must be one of: random_one, cycle. Got: {mode}")
+    raise ValueError(f"task_selection_mode must be one of: all, random_one, cycle. Got: {mode}")
 
 
 # ---------------------------------------------------------------------------
@@ -295,11 +305,13 @@ def _render_prompt(
     mode: str,
     task_name: str,
     baseline_par2: float | None,
-    baseline_code: str,
+    baseline_code: str | dict,
     last_iter_result: dict | None,
     use_structured: bool,
     config_payload: dict,
     output_path: Path,
+    all_tasks_mode: bool = False,
+    task_sequence: list[str] | None = None,
 ) -> str:
     base_text = _load_prompt_file(mode)
     prompt = build_prompt_text(
@@ -310,7 +322,8 @@ def _render_prompt(
         last_iter_result=last_iter_result,
         config_payload=config_payload,
         structured_output=use_structured,
-        allowed_modules=[task_name],
+        allowed_modules=task_sequence if all_tasks_mode else [task_name],
+        all_tasks_mode=all_tasks_mode,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(prompt, encoding="utf-8")
@@ -412,6 +425,95 @@ def _execute_candidate(count: int, results: dict, args, answer_payload: dict, ex
 
 
 # ---------------------------------------------------------------------------
+# Multi-task (all-mode) LLM call and execution
+# ---------------------------------------------------------------------------
+
+def _query_llm_all(prompt_file: str, count: int, args, task_sequence: list[str]) -> tuple[int, dict[str, dict]]:
+    """Query LLM for all tasks at once. Returns {task_name: {code, title, reason}}."""
+    llm_api = get_llm_api(args)
+    temperature = getattr(args, "temperature", 1.0)
+    use_structured = getattr(llm_api, "_structured_output", False)
+
+    if use_structured:
+        # Use multi-task structured schema
+        if hasattr(llm_api, "_call_structured_raw"):
+            with open(prompt_file, encoding="utf-8") as f:
+                prompt = f.read()
+            # Eliza: use tool_use for all tasks
+            if hasattr(llm_api, "_post"):
+                tool_schema = build_tool_schema_all(task_sequence)
+                payload = {
+                    "model": llm_api.model_name,
+                    "max_tokens": llm_api._DEFAULT_MAX_TOKENS,
+                    "system": llm_api._build_structured_system_prompt(),
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": temperature,
+                    "tools": [tool_schema],
+                    "tool_choice": {"type": "any"},
+                }
+                try:
+                    data = llm_api._call_with_retries(lambda: llm_api._post(payload), description="all-tasks[eliza]")
+                    llm_api._log_usage_from_response(data)
+                    for block in data.get("content", []):
+                        if block.get("type") == "tool_use":
+                            raw = json.dumps(block.get("input", {}))
+                            return count, parse_multi_response(raw, task_sequence)
+                except Exception as exc:
+                    print(f"[all-tasks] Eliza tool_use failed: {exc}, falling back", flush=True)
+            # GPT-compatible: use json_schema for all tasks
+            else:
+                import openai as _openai
+                schema = build_structured_schema_all(task_sequence)
+                try:
+                    resp = llm_api._call_with_retries(
+                        lambda: _openai.ChatCompletion.create(
+                            model=llm_api.model_name,
+                            messages=[
+                                {"role": "system", "content": llm_api._build_structured_system_prompt()},
+                                {"role": "user", "content": prompt},
+                            ],
+                            temperature=temperature,
+                            stream=False,
+                            response_format=schema,
+                        ),
+                        description="all-tasks[openai]",
+                    )
+                    llm_api._log_token_usage(resp.get("usage"))
+                    raw = resp["choices"][0]["message"]["content"]
+                    return count, parse_multi_response(raw, task_sequence)
+                except Exception as exc:
+                    print(f"[all-tasks] OpenAI structured failed: {exc}, falling back", flush=True)
+
+    # Plain text fallback
+    raw_text = llm_api.call_api(prompt_file=prompt_file, temperature=temperature)
+    return count, get_code_from_text_all(raw_text, task_sequence)
+
+
+def _execute_candidate_all(
+    count: int,
+    results: dict,
+    args,
+    payloads: dict[str, dict],
+    task_sequence: list[str],
+) -> tuple[int, bool, str]:
+    """Build solver with codes for all tasks and execute it."""
+    worker = ExecutionWorker()
+    codes = {t: p["code"] for t, p in payloads.items() if p.get("code") and len(p["code"].strip()) >= 10}
+    combined_repr = json.dumps(payloads, ensure_ascii=False)
+
+    if args.devoid_duplication and combined_repr in results["prompt"].values():
+        return count, False, combined_repr
+
+    save_path = os.path.join(args.temp_root, f"EasySAT_{(count - 1) % args.batch_size}", "EasySAT.cpp")
+    rendered = build_solver_source(codes, timeout=args.timeout, data_dir=f'"{args.data_dir}"')
+    Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(save_path).write_text(rendered, encoding="utf-8")
+
+    success = worker.execute(count, args.batch_size, args.data_parallel_size)
+    return count, bool(success), combined_repr
+
+
+# ---------------------------------------------------------------------------
 # Evaluation helpers
 # ---------------------------------------------------------------------------
 def _latest_result_file(results_dir: str, method_name: str) -> str | None:
@@ -485,6 +587,58 @@ def _run_eval_stage(args, final: dict, extra_params: dict, paths: dict) -> None:
     model_tag = str(getattr(args, "llm_model", "model") or "model").replace("/", "")
     method_name = f"best_{best_gid}_{model_tag}"
 
+    # Detect all-tasks-mode candidate: best_code is a JSON dict string
+    is_all_mode_candidate = False
+    all_codes: dict[str, str] = {}
+    try:
+        parsed = json.loads(best_code)
+        if isinstance(parsed, dict) and any(isinstance(v, dict) for v in parsed.values()):
+            is_all_mode_candidate = True
+            all_codes = {t: info.get("code", "") for t, info in parsed.items() if isinstance(info, dict)}
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    if is_all_mode_candidate:
+        # Build a combined solver with all codes and evaluate it
+        cpp_path = os.path.join(args.temp_root, f"EasySAT_eval_all_{best_gid}", "EasySAT_modified.cpp")
+        rendered = build_solver_source(all_codes, timeout=args.eval_timeout, data_dir=f'"{args.eval_data_dir}"')
+        Path(cpp_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(cpp_path).write_text(rendered, encoding="utf-8")
+        ok, err = _validate_solver(cpp_path)
+        if not ok:
+            warnings.warn(f"[Eval] All-mode solver compile failed: {err}", stacklevel=2)
+            return
+        prev_task = args.task
+        try:
+            evaluate(args, method_name=method_name, SAT_solver_file_path=cpp_path)
+        finally:
+            args.task = prev_task
+        result_file = _latest_result_file(args.results_save_path, method_name)
+        if not result_file:
+            warnings.warn("[Eval] No result file for all-mode candidate.", stacklevel=2)
+            return
+        eval_par2 = _read_eval_par2(result_file)
+        impls = best_meta.get("implementations", [])
+        print(f"\n[Eval] === Best configuration (all-tasks mode) ===", flush=True)
+        print(f"[Eval] global_id     : {best_gid}", flush=True)
+        print(f"[Eval] train PAR-2   : {best_train_par2:.2f} (baseline: {baseline_par2:.2f})", flush=True)
+        print(f"[Eval] eval  PAR-2   : {eval_par2:.2f}", flush=True)
+        print(f"[Eval] eval delta    : {eval_par2 - baseline_par2:+.2f} vs baseline", flush=True)
+        for impl in impls:
+            print(f"[Eval]   {impl.get('task','?')}: {impl.get('title','')}", flush=True)
+        _atomic_write_json(
+            Path(args.results_root) / "eval_best_result.json",
+            {
+                "global_id": best_gid, "mode": "all",
+                "implementations": impls,
+                "train_PAR-2": best_train_par2, "eval_PAR-2": eval_par2,
+                "baseline_PAR-2": baseline_par2,
+            },
+        )
+        print(f"[Eval] Saved to {args.results_root}/eval_best_result.json", flush=True)
+        return
+
+    # Single-task candidate
     task_name = _infer_task_from_code(best_code) or getattr(args, "task", "")
     if not task_name:
         print("[Eval] Cannot infer task for best candidate — skipping.", flush=True)
@@ -499,8 +653,7 @@ def _run_eval_stage(args, final: dict, extra_params: dict, paths: dict) -> None:
         print(f"[Eval] reason        : {best_meta.get('reason', '')}", flush=True)
         print(f"[Eval] train PAR-2   : {best_train_par2:.2f} (baseline: {baseline_par2:.2f})", flush=True)
         print(f"[Eval] eval  PAR-2   : {eval_par2:.2f}", flush=True)
-        delta = eval_par2 - baseline_par2
-        print(f"[Eval] eval delta    : {delta:+.2f} vs baseline", flush=True)
+        print(f"[Eval] eval delta    : {eval_par2 - baseline_par2:+.2f} vs baseline", flush=True)
         _atomic_write_json(
             Path(args.results_root) / "eval_best_result.json",
             {
@@ -734,67 +887,106 @@ def main(args):
 
     for i in range(start_iter, loop_end):
         current_task = _task_for_iteration(task_sequence, selection_mode, i, rand_seed)
-        args.task = current_task
+        is_all_mode = (current_task == ALL_TASKS_SENTINEL)
+
+        # For args.task use the first task in sequence as a label (needed by evaluate())
+        args.task = task_sequence[0] if is_all_mode else current_task
         clean_files(folder_path=args.temp_results_dir, mode="all")
 
-        baseline_code = extract_baseline_section(baseline_text, current_task)
+        # Baseline code: dict for all-mode, string for single-task
+        if is_all_mode:
+            baseline_code: str | dict = {
+                t: extract_baseline_section(baseline_text, t) for t in task_sequence
+            }
+        else:
+            baseline_code = extract_baseline_section(baseline_text, current_task)
 
-        # Determine last_iter_result for feedback
+        # Last-iteration result for feedback prompt
         last_iter_result: dict | None = None
         if i > 0 and best_result:
             bk = list(best_result.keys())[0]
             bd = best_result[bk]
             meta = extra_params.get(int(bk) if str(bk).isdigit() else bk, {})
-            last_iter_result = {
-                "par2": bd[2],
-                "code": bd[1],
-                "title": meta.get("title", ""),
-                "reason": meta.get("reason", ""),
-            }
+            if is_all_mode and "implementations" in meta:
+                last_iter_result = {"par2": bd[2], "implementations": meta["implementations"]}
+            else:
+                last_iter_result = {
+                    "par2": bd[2],
+                    "code": bd[1],
+                    "title": meta.get("title", ""),
+                    "reason": meta.get("reason", ""),
+                }
 
-        mode = "original" if (i == 0 or not last_iter_result) else "feedback"
+        prompt_mode = "original" if (i == 0 or not last_iter_result) else "feedback"
         if i > 0 and last_iter_result and check_reIteration(
             round=i,
             best_result_dict=best_result,
             baseline={"time": results["time"]["0"], "PAR-2": results["PAR-2"]["0"]},
         ):
-            mode = "original"
+            prompt_mode = "original"
 
+        task_label = "all" if is_all_mode else current_task
         prompt_file = _render_prompt(
-            mode=mode,
-            task_name=current_task,
+            mode=prompt_mode,
+            task_name=task_sequence[0] if is_all_mode else current_task,
             baseline_par2=baseline_par2,
             baseline_code=baseline_code,
             last_iter_result=last_iter_result,
             use_structured=getattr(args, "use_structured", False),
             config_payload=getattr(args, "_loaded_config_payload", {}),
-            output_path=paths["temp_prompts_dir"] / f"iter_{i}_{mode}_prompt.txt",
+            output_path=paths["temp_prompts_dir"] / f"iter_{i}_{prompt_mode}_prompt.txt",
+            all_tasks_mode=is_all_mode,
+            task_sequence=task_sequence,
         )
-        print(f"[Iter {i}] task={current_task} mode={mode}", flush=True)
+        print(f"[Iter {i}] task={task_label} mode={prompt_mode}", flush=True)
 
-        # Query LLM (batch)
-        answer_payloads: dict[int, dict] = {}
+        # ── Query LLM (batch) ────────────────────────────────────────────────
+        # all-mode: returns {task: {code,title,reason}} per batch slot
+        # single-mode: returns {code,title,reason} per batch slot
+        answer_payloads: dict[int, dict] = {}   # batch_id → payload
         for batch_id in range(args.batch_size):
             c = i * args.batch_size + batch_id + 1
-            c_out, payload = _query_llm(prompt_file, c, args)
-            answer_payloads[batch_id] = payload
-            print(f"  [LLM] count={c_out} title={payload.get('title','')!r}", flush=True)
+            if is_all_mode:
+                c_out, multi_payload = _query_llm_all(prompt_file, c, args, task_sequence)
+                answer_payloads[batch_id] = multi_payload  # {task: {code,title,reason}}
+            else:
+                c_out, payload = _query_llm(prompt_file, c, args)
+                answer_payloads[batch_id] = payload        # {code,title,reason}
+            print(f"  [LLM] count={c} all_mode={is_all_mode}", flush=True)
 
-        # Execute (compile + run)
+        # ── Execute (compile + run) ──────────────────────────────────────────
         id_list: list[int] = []
         repetition_dict: dict = {}
         for batch_id in range(args.batch_size):
             c = i * args.batch_size + batch_id + 1
             payload = answer_payloads[batch_id]
-            c_out, success, code = _execute_candidate(c, results, args, payload, _best_codes)
-            answers[c_out] = code
-            extra_params[c_out] = {"title": payload.get("title", ""), "reason": payload.get("reason", "")}
+
+            if is_all_mode:
+                c_out, success, combined_code = _execute_candidate_all(
+                    c, results, args, payload, task_sequence
+                )
+                answers[c_out] = combined_code
+                # Store per-task titles/reasons + implementations list for feedback
+                impls = [
+                    {"task": t, "code": payload[t]["code"],
+                     "title": payload[t]["title"], "reason": payload[t]["reason"]}
+                    for t in task_sequence if t in payload
+                ]
+                extra_params[c_out] = {"implementations": impls, "title": "", "reason": ""}
+            else:
+                c_out, success, code = _execute_candidate(c, results, args, payload, _best_codes)
+                answers[c_out] = code
+                extra_params[c_out] = {
+                    "title": payload.get("title", ""),
+                    "reason": payload.get("reason", ""),
+                }
+
             if success:
                 id_list.append(c_out)
             elif args.devoid_duplication and not success:
-                repetition_dict[c_out] = code
+                repetition_dict[c_out] = answers[c_out]
 
-        # Wait for results
+        # ── Wait for solver results ──────────────────────────────────────────
         filenames = [f"{gid}_{n}.txt" for gid in id_list for n in range(args.data_parallel_size)]
         t0 = time.time()
         timeout_limit = args.timeout * (2 * data_num / args.data_parallel_size)
@@ -802,11 +994,14 @@ def main(args):
             elapsed = time.time() - t0
             if elapsed > timeout_limit:
                 warnings.warn(f"[Iter {i}] Solver timeout after {elapsed:.1f}s", stacklevel=2)
-                result, best_result = collect_results(answers=answers, repetition_dict=repetition_dict, results=results, args=args)
-                delete_InfiniteLoopInst(candidates=[f"finished{f}" for f in filenames], result_dict=result)
+                result, best_result = collect_results(
+                    answers=answers, repetition_dict=repetition_dict, results=results, args=args)
+                delete_InfiniteLoopInst(
+                    candidates=[f"finished{f}" for f in filenames], result_dict=result)
                 break
             if all((paths["temp_results_dir"] / f"finished{f}").exists() for f in filenames):
-                result, best_result = collect_results(answers=answers, repetition_dict=repetition_dict, results=results, args=args)
+                result, best_result = collect_results(
+                    answers=answers, repetition_dict=repetition_dict, results=results, args=args)
                 break
 
         if not id_list:
@@ -817,41 +1012,78 @@ def main(args):
         results["PAR-2"].update(result.get("PAR-2", {}))
         results["prompt"].update(result.get("prompt", {}))
 
-        # Log for progress server
+        # ── Progress logging ─────────────────────────────────────────────────
         iter_par2 = result.get("PAR-2", {})
         iter_best_par2 = min(iter_par2.values()) if iter_par2 else None
-        iter_best_id = min(iter_par2, key=iter_par2.get) if iter_par2 else None
-        iter_meta = extra_params.get(int(iter_best_id) if iter_best_id and str(iter_best_id).isdigit() else iter_best_id or 0, {})
+        iter_best_id   = min(iter_par2, key=iter_par2.get) if iter_par2 else None
+        iter_meta = extra_params.get(
+            int(iter_best_id) if iter_best_id and str(iter_best_id).isdigit() else 0, {}
+        )
+        # For all-mode dashboard entry: show first implementation as representative
+        first_impl = (iter_meta.get("implementations") or [{}])[0]
         iterations_log.append({
             "iter": i,
-            "task": current_task,
+            "task": task_label,
             "best_par2": iter_best_par2,
-            "best_code": answers.get(int(iter_best_id) if iter_best_id and str(iter_best_id).isdigit() else 0, ""),
-            "title": iter_meta.get("title", ""),
-            "reason": iter_meta.get("reason", ""),
+            "best_code": (
+                first_impl.get("code", "")
+                if is_all_mode
+                else answers.get(int(iter_best_id) if iter_best_id and str(iter_best_id).isdigit() else 0, "")
+            ),
+            "title":  first_impl.get("title",  "") if is_all_mode else iter_meta.get("title", ""),
+            "reason": first_impl.get("reason", "") if is_all_mode else iter_meta.get("reason", ""),
+            "implementations": iter_meta.get("implementations", []) if is_all_mode else [],
         })
         _update_progress(args, run_id, baseline_par2, iterations_log)
 
-        _save_iteration_artifacts(i, result, best_result, paths["temp_prompts_dir"], paths["results_root"], paths["snapshots_dir"])
-        _save_checkpoint(i + 1, results, answers, extra_params, best_result,
-                         paths["checkpoint_dir"], run_id)
+        _save_iteration_artifacts(
+            i, result, best_result,
+            paths["temp_prompts_dir"], paths["results_root"], paths["snapshots_dir"],
+        )
+        _save_checkpoint(
+            i + 1, results, answers, extra_params, best_result, paths["checkpoint_dir"], run_id
+        )
 
-        # Optional write-back
+        # ── Optional write-back ──────────────────────────────────────────────
         if _template_strategy in ("greedy_train", "annealing") and best_result:
             bk = list(best_result.keys())[0]
             bp2 = best_result[bk][2]
-            bc = best_result[bk][1]
-            if bp2 < (baseline_par2 or float("inf")) and len(str(bc).strip()) >= 10:
-                task_wb = _infer_task_from_code(bc) or current_task
-                prev = _writeback_par2.get(task_wb, float("inf"))
-                accept, reason_str = _should_writeback(
-                    _template_strategy, bp2, prev, baseline_par2 or 1.0, i, loop_end, _sa_rng
-                )
-                print(f"[WriteBack] iter={i} task={task_wb} PAR-2={bp2:.0f} prev={prev:.0f} → {reason_str}", flush=True)
-                if accept:
-                    _best_codes[task_wb] = bc
-                    _writeback_par2[task_wb] = bp2
-                    update_solver_template(_best_codes)
+            bc  = best_result[bk][1]
+            if bp2 < (baseline_par2 or float("inf")):
+                if is_all_mode:
+                    # bc is a JSON string of {task: {code,...}}; update all tasks
+                    try:
+                        multi = json.loads(bc)
+                        wb_codes = {
+                            t: info["code"]
+                            for t, info in multi.items()
+                            if isinstance(info, dict) and len(str(info.get("code", "")).strip()) >= 10
+                        }
+                        if wb_codes:
+                            # Use the minimum prev to decide accept/reject
+                            prev = min(_writeback_par2.get(t, float("inf")) for t in wb_codes)
+                            accept, reason_str = _should_writeback(
+                                _template_strategy, bp2, prev, baseline_par2 or 1.0, i, loop_end, _sa_rng
+                            )
+                            print(f"[WriteBack] iter={i} all-mode PAR-2={bp2:.0f} → {reason_str}", flush=True)
+                            if accept:
+                                _best_codes.update(wb_codes)
+                                for t in wb_codes:
+                                    _writeback_par2[t] = bp2
+                                update_solver_template(_best_codes)
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
+                elif len(str(bc).strip()) >= 10:
+                    task_wb = _infer_task_from_code(bc) or current_task
+                    prev = _writeback_par2.get(task_wb, float("inf"))
+                    accept, reason_str = _should_writeback(
+                        _template_strategy, bp2, prev, baseline_par2 or 1.0, i, loop_end, _sa_rng
+                    )
+                    print(f"[WriteBack] iter={i} task={task_wb} PAR-2={bp2:.0f} → {reason_str}", flush=True)
+                    if accept:
+                        _best_codes[task_wb] = bc
+                        _writeback_par2[task_wb] = bp2
+                        update_solver_template(_best_codes)
 
     # Save final result
     final = {

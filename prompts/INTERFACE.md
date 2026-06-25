@@ -94,6 +94,50 @@ metadata to `heuristic_modules` in `config.yaml`.
 
 ---
 
+---
+
+## task_selection_mode
+
+| Mode         | Behaviour |
+|--------------|-----------|
+| `random_one` | One random task is picked per iteration; LLM returns one function |
+| `cycle`      | Tasks are cycled in order; LLM returns one function per iteration |
+| `all`        | **All tasks in one call**: LLM returns code for every heuristic at once |
+
+### `all` mode — structured output format
+
+When `use_structured: true` the model must return:
+```json
+{
+  "implementations": [
+    {"task": "bump_var_function", "code": "...", "title": "...", "reason": "..."},
+    {"task": "restart_function",  "code": "...", "title": "...", "reason": "..."},
+    ...
+  ]
+}
+```
+Include one entry for every task in `optimize_tasks`. If no improvement found for a task,
+include the baseline code unchanged.
+
+### `all` mode — plain text fallback (use_structured: false)
+
+Wrap each function with task-specific markers:
+```
+// start_bump_var_function
+void Solver::bump_var(int var, double coeff) {
+    ...
+}
+// end_bump_var_function
+
+// start_restart_function
+void Solver::restart() {
+    ...
+}
+// end_restart_function
+```
+
+---
+
 ## Example config.yaml
 
 ```yaml
