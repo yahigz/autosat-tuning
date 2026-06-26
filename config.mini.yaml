@@ -1,19 +1,20 @@
 # Minimal config for quick smoke testing (2 iterations, no eval)
 iteration_num: 2
 batch_size: 2
-data_parallel_size: 1
+data_parallel_size: 7
 timeout: 1
-data_dir: "./temp/data_train"
+data_dir: "../optimization-with-llm/benchmarks/custom_dataset/train"
 
-optimize_tasks: [bump_var_function]
-task_selection_mode: random_one
+optimize_tasks:
+  - bump_var_function
+  - restart_function
+task_selection_mode: all
 rand_seed: 42
 
 original: true
-llm_model: "claude-sonnet-4-6"
-use_structured: true
-temperature: 1.0
+temperature: 0.6
 
 template_update_strategy: none
 run_eval: false
-enable_server: false
+enable_server: true
+server_port: 8080

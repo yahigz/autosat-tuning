@@ -13,8 +13,7 @@ DEFAULT_HEURISTIC_MODULES: Dict[str, Dict[str, str]] = {
     "bump_var_function": {
         "label": "Variable activity bumping",
         "description": (
-            "Increases the priority of variables involved in recent conflicts, "
-            "helping the solver focus on the hardest parts of the problem."
+            "This function increases the priority of variables that cause recent conflicts; as a result, it helps the solver focus its next choices on the most difficult parts of the problem."
         ),
         "insertion_format": "Replace the full function body inside `void Solver::bump_var(int var, double coeff)`.",
         "signature": "void Solver::bump_var(int var, double coeff)",
@@ -22,8 +21,7 @@ DEFAULT_HEURISTIC_MODULES: Dict[str, Dict[str, str]] = {
     "restart_condition": {
         "label": "Restart trigger",
         "description": (
-            "Predicate deciding whether to restart the current search. "
-            "Prevents wasting time on dead-end search paths."
+            "This is a simple predicate that returns true or false to decide if the current search branch should be stopped; its main purpose is to prevent the solver from wasting too much time on a single, dead-end path."
         ),
         "insertion_format": (
             "Replace the `else if (...)` branch that calls `restart()` inside `solve()`. "
@@ -34,8 +32,7 @@ DEFAULT_HEURISTIC_MODULES: Dict[str, Dict[str, str]] = {
     "restart_function": {
         "label": "Restart policy",
         "description": (
-            "Cancels current temporary assignments and returns to the root level "
-            "while keeping all learned clauses."
+            "This cancels the current temporary choices and returns the search to the very beginning while keeping all learned rules; applying it allows the solver to escape trapped areas and try better paths."
         ),
         "insertion_format": "Replace the full function body inside `void Solver::restart()`.",
         "signature": "void Solver::restart()",
@@ -43,7 +40,7 @@ DEFAULT_HEURISTIC_MODULES: Dict[str, Dict[str, str]] = {
     "rephase_function": {
         "label": "Rephase policy",
         "description": (
-            "Changes preferred polarities of variables to escape repeated bad polarity patterns."
+            "This changes the preferred true/false values of variables according to a specific plan; by doing this, it forces the solver to explore completely different areas of the formula."
         ),
         "insertion_format": "Replace the full function body inside `void Solver::rephase()`.",
         "signature": "void Solver::rephase()",
@@ -51,8 +48,7 @@ DEFAULT_HEURISTIC_MODULES: Dict[str, Dict[str, str]] = {
     "rephase_condition": {
         "label": "Rephase trigger",
         "description": (
-            "Predicate deciding when to call rephase(). "
-            "Stops the solver from repeating the same polarity mistakes."
+            "This is a simple predicate that returns true or false to signal when it is time to change the true/false choice strategy; this stops the solver from repeating the same phase mistakes over and over."
         ),
         "insertion_format": (
             "Replace the `else if (...)` branch that calls `rephase()` inside `solve()`. "

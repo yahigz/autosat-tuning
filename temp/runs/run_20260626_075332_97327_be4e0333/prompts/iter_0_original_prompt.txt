@@ -1,6 +1,26 @@
 You are a SAT solver researcher. Optimize the heuristic parameters of a C++ CDCL SAT solver.
 
-{{ heuristics_section }}
+=== bump_var_function — Variable activity bumping ===
+Description: This function increases the priority of variables that cause recent conflicts; as a result, it helps the solver focus its next choices on the most difficult parts of the problem.
+Signature: void Solver::bump_var(int var, double coeff)
+Insertion: Replace the full function body inside `void Solver::bump_var(int var, double coeff)`.
+Baseline code:
+if ((activity[var] += var_inc * coeff) > 1e100) {           // Update score and prevent float overflow
+        for (int i = 1; i <= vars; i++) activity[i] *= 1e-100;
+        var_inc *= 1e-100;}
+    if (vsids.inHeap(var)) vsids.update(var);                 // update heap
+
+=== restart_function — Restart policy ===
+Description: This cancels the current temporary choices and returns the search to the very beginning while keeping all learned rules; applying it allows the solver to escape trapped areas and try better paths.
+Signature: void Solver::restart()
+Insertion: Replace the full function body inside `void Solver::restart()`.
+Baseline code:
+fast_lbd_sum = lbd_queue_size = lbd_queue_pos = 0;
+    backtrack(0);
+    int phase_rand = rand() % 100;              // probabilistic rephasing
+    if ((phase_rand -= 60) < 0)     for (int i = 1; i <= vars; i++) saved[i] = local_best[i];
+    else if ((phase_rand -= 5) < 0) for (int i = 1; i <= vars; i++) saved[i] = -local_best[i];
+    else if ((phase_rand -= 20) < 0)for (int i = 1; i <= vars; i++) saved[i] = rand() % 2 ? 1 : -1;
 
 Your code must be wrapped as:
 // start
@@ -290,3 +310,13 @@ int main(int argc, char **argv) {
 }
 
 ```
+
+Return a valid JSON object with this structure:
+{
+  "implementations": [
+    {"task": "<name>", "code": "<C++ code>", "title": "<short name>", "reason": "<motivation>"},
+    ...
+  ]
+}
+Include one entry for each of: "bump_var_function", "restart_function".
+All fields in each entry are required. If you have no improvement for a task, still include it with the baseline code.
