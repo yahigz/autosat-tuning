@@ -430,61 +430,25 @@ def _execute_candidate(count: int, results: dict, args, answer_payload: dict, ex
 
 def _query_llm_all(prompt_file: str, count: int, args, task_sequence: list[str]) -> tuple[int, dict[str, dict]]:
     """Query LLM for all tasks at once. Returns {task_name: {code, title, reason}}."""
-    llm_api = get_llm_api(args)
+    from llm_api.base_api import ElizaCallAPI, GPTCallAPI
+
+    llm_api     = get_llm_api(args)
     temperature = getattr(args, "temperature", 1.0)
     use_structured = getattr(llm_api, "_structured_output", False)
 
-    if use_structured:
-        # Use multi-task structured schema
-        if hasattr(llm_api, "_call_structured_raw"):
-            with open(prompt_file, encoding="utf-8") as f:
-                prompt = f.read()
-            # Eliza: use tool_use for all tasks
-            if hasattr(llm_api, "_post"):
-                tool_schema = build_tool_schema_all(task_sequence)
-                payload = {
-                    "model": llm_api.model_name,
-                    "max_tokens": llm_api._DEFAULT_MAX_TOKENS,
-                    "system": llm_api._build_structured_system_prompt(),
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": temperature,
-                    "tools": [tool_schema],
-                    "tool_choice": {"type": "any"},
-                }
-                try:
-                    data = llm_api._call_with_retries(lambda: llm_api._post(payload), description="all-tasks[eliza]")
-                    llm_api._log_usage_from_response(data)
-                    for block in data.get("content", []):
-                        if block.get("type") == "tool_use":
-                            raw = json.dumps(block.get("input", {}))
-                            return count, parse_multi_response(raw, task_sequence)
-                except Exception as exc:
-                    print(f"[all-tasks] Eliza tool_use failed: {exc}, falling back", flush=True)
-            # GPT-compatible: use json_schema for all tasks
-            else:
-                import openai as _openai
-                schema = build_structured_schema_all(task_sequence)
-                try:
-                    resp = llm_api._call_with_retries(
-                        lambda: _openai.ChatCompletion.create(
-                            model=llm_api.model_name,
-                            messages=[
-                                {"role": "system", "content": llm_api._build_structured_system_prompt()},
-                                {"role": "user", "content": prompt},
-                            ],
-                            temperature=temperature,
-                            stream=False,
-                            response_format=schema,
-                        ),
-                        description="all-tasks[openai]",
-                    )
-                    llm_api._log_token_usage(resp.get("usage"))
-                    raw = resp["choices"][0]["message"]["content"]
-                    return count, parse_multi_response(raw, task_sequence)
-                except Exception as exc:
-                    print(f"[all-tasks] OpenAI structured failed: {exc}, falling back", flush=True)
+    with open(prompt_file, encoding="utf-8") as f:
+        prompt = f.read()
 
-    # Plain text fallback
+    if use_structured:
+        if isinstance(llm_api, ElizaCallAPI):
+            raw = llm_api.call_structured_all(prompt, temperature, build_tool_schema_all(task_sequence))
+            return count, parse_multi_response(raw, task_sequence)
+
+        if isinstance(llm_api, GPTCallAPI):
+            raw = llm_api.call_structured_all(prompt, temperature, build_structured_schema_all(task_sequence))
+            return count, parse_multi_response(raw, task_sequence)
+
+    # Plain text fallback (LocalCallAPI or structured disabled)
     raw_text = llm_api.call_api(prompt_file=prompt_file, temperature=temperature)
     return count, get_code_from_text_all(raw_text, task_sequence)
 
