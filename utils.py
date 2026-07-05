@@ -101,18 +101,18 @@ def process_raw_results(folder_path, timeout, answers=None):
             id, num = match.groups()
             file_path = os.path.join(folder_path, filename)
             if os.path.isfile(file_path):
-                tmp_total_time = 0
+                tmp_total_time = 0.0
                 tmp_situation = {"satisfiable": 0,
                                  "unsatisfiable": 0,
                                  "timeout": 0}
-                tmp_par2 = 0
+                tmp_par2 = 0.0
                 with open(file_path, 'r') as file:
                     for line in file.readlines():
                         line = line.strip().strip('\n').strip()
                         if line.startswith('File name'):
                             continue
                         parts = line.split('\t')
-                        duration = int(parts[1])
+                        duration = float(parts[1])
                         situation_single = parts[2].lower()
                         tmp_situation[situation_single] += 1
                         tmp_total_time += duration

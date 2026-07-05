@@ -2,7 +2,11 @@ You are a SAT solver researcher. Optimize the heuristic parameters of a C++ CDCL
 
 {{ heuristics_section }}
 
+Here are the baseline results:
+
 {{ baseline_section }}
+
+Here are results of the previous iteration:
 
 {{ last_iter_section }}
 
@@ -18,7 +22,7 @@ Tips:
 3) Your code must differ from the baseline.
 4) You must not be afraid of trying novel ideas for heuristics. Check that the code you providing is compilable, all variables are defined and there are no typos.
 5) If your previous code contains errors, try fix them.
-6) If you are developing idea of the previous iteration, mention that in reason. 
+6) If you are developing idea of the previous iteration, mention that in reason (but you need to provide an accent to it, describing why new code should work better). 
 7) If you decided to take an absolutely new approach, do not elaborate on previous iterations in reason, just describe your current idea.
 
 # Code of the SAT solver

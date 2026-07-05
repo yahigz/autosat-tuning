@@ -459,7 +459,7 @@ def _execute_candidate_all(
     args,
     payloads: dict[str, dict],
     task_sequence: list[str],
-) -> tuple[int, bool, str]:
+) -> tuple[int, bool, str, str]:
     """Build solver with codes for all tasks and execute it."""
     worker = ExecutionWorker()
     codes = {t: p["code"] for t, p in payloads.items() if p.get("code") and len(p["code"].strip()) >= 10}
@@ -474,7 +474,7 @@ def _execute_candidate_all(
     Path(save_path).write_text(rendered, encoding="utf-8")
 
     success = worker.execute(count, args.batch_size, args.data_parallel_size)
-    return count, bool(success), combined_repr
+    return count, bool(success), combined_repr, rendered
 
 
 # ---------------------------------------------------------------------------
@@ -926,7 +926,7 @@ def main(args):
             payload = answer_payloads[batch_id]
 
             if is_all_mode:
-                c_out, success, combined_code = _execute_candidate_all(
+                c_out, success, combined_code, combined_source = _execute_candidate_all(
                     c, results, args, payload, task_sequence
                 )
                 answers[c_out] = combined_code
@@ -936,7 +936,15 @@ def main(args):
                      "title": payload[t]["title"], "reason": payload[t]["reason"]}
                     for t in task_sequence if t in payload
                 ]
-                extra_params[c_out] = {"implementations": impls, "title": "", "reason": ""}
+                extra_params[c_out] = {
+                    "implementations": impls,
+                    "comparison_code": combined_source,
+                    "code_preview": f"{len(impls)} functions optimized: " + ", ".join(
+                        impl.get("task", "") for impl in impls[:3] if impl.get("task")
+                    ) + (" ..." if len(impls) > 3 else ""),
+                    "title": "",
+                    "reason": "",
+                }
             else:
                 c_out, success, code = _execute_candidate(c, results, args, payload, _best_codes)
                 answers[c_out] = code
@@ -990,9 +998,14 @@ def main(args):
             "task": task_label,
             "best_par2": iter_best_par2,
             "best_code": (
-                first_impl.get("code", "")
+                iter_meta.get("comparison_code", "")
                 if is_all_mode
                 else answers.get(int(iter_best_id) if iter_best_id and str(iter_best_id).isdigit() else 0, "")
+            ),
+            "code_preview": (
+                iter_meta.get("code_preview", "")
+                if is_all_mode
+                else first_impl.get("code", "")
             ),
             "title":  first_impl.get("title",  "") if is_all_mode else iter_meta.get("title", ""),
             "reason": first_impl.get("reason", "") if is_all_mode else iter_meta.get("reason", ""),

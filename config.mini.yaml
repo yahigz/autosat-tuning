@@ -1,13 +1,16 @@
 # Minimal config for quick smoke testing (2 iterations, no eval)
-iteration_num: 2
-batch_size: 2
-data_parallel_size: 7
-timeout: 1
-data_dir: "../optimization-with-llm/benchmarks/custom_dataset/train"
+iteration_num: 20
+batch_size: 1
+data_parallel_size: 8
+timeout: 3000
+data_dir: "./datasets/cryptography-ascon/train"
 
 optimize_tasks:
   - bump_var_function
   - restart_function
+  - rephase_function
+  - restart_condition
+  - rephase_condition
 task_selection_mode: all
 rand_seed: 42
 
@@ -15,6 +18,14 @@ original: true
 temperature: 0.6
 
 template_update_strategy: none
-run_eval: false
 enable_server: true
 server_port: 8080
+
+llm_model: "deepseek-ai/DeepSeek-V4-Flash"
+use_structured: true
+
+run_eval: true
+eval_timeout: 3000
+eval_data_dir: "./datasets/cryptography-ascon/eval"
+eval_parallel_size: 7
+keep_intermediate_results: true

@@ -200,7 +200,7 @@ def _format_structured_section_single(task_name: str) -> str:
         "Return a valid JSON object with exactly these fields:\n"
         '  "code": string — complete C++ implementation to inject\n'
         '  "title": string — short name for the proposed change\n'
-        '  "reason": string — brief motivation for the change\n'
+        '  "reason": string — brief motivation for the change, it is advisable to explain the benefit in comparison to the previous iteration or baseline\n'
         "All fields are required."
     )
 

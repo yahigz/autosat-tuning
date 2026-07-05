@@ -155,8 +155,8 @@ function renderDiff(codeA, codeB, labelA, labelB) {
 
 function maybeShowDiff() {
   if (!selA || !selB) return;
-  const codeA = selA.best_code || '';
-  const codeB = selB.best_code || '';
+  const codeA = selA.comparison_code || selA.best_code || '';
+  const codeB = selB.comparison_code || selB.best_code || '';
   const labelA = `iter ${selA.iter} · ${selA.task||'?'} · PAR-2=${selA.best_par2!=null?selA.best_par2.toFixed(2):'?'}`;
   const labelB = `iter ${selB.iter} · ${selB.task||'?'} · PAR-2=${selB.best_par2!=null?selB.best_par2.toFixed(2):'?'}`;
   renderDiff(codeA, codeB, labelA, labelB);
@@ -239,7 +239,8 @@ async function load() {
     const delta = (baseline!=null && par2!=null) ? par2-baseline : null;
     const cls = delta==null?'na':delta<0?'good':'bad';
     const dStr = delta==null?'—':delta<0?delta.toFixed(2):'+'+delta.toFixed(2);
-    const preview = (it.best_code||'').replace(/\n/g,' ').trim().slice(0,80);
+    const previewSource = it.code_preview || it.best_code || '';
+    const preview = String(previewSource).replace(/\n/g,' ').trim().slice(0,120);
 
     const tr = document.createElement('tr');
     tr.className = 'data-row';
@@ -251,7 +252,7 @@ async function load() {
       `<td class="${cls}">${dStr}</td>` +
       `<td>${escHtml(it.title||'—')}</td>` +
       `<td>${escHtml(it.reason||'—')}</td>` +
-      `<td class="code-cell" title="${escHtml(it.best_code||'')}">${escHtml(preview)}</td>`;
+      `<td class="code-cell" title="${escHtml(it.comparison_code || it.best_code || '')}">${escHtml(preview)}</td>`;
 
     // Re-apply selections after reload
     if (it.iter === selAIter) { tr.classList.add('sel-a'); selA = it; }

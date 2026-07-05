@@ -1,0 +1,20 @@
+{
+  "time": {
+    "1": 23206.370000000003
+  },
+  "prompt": {
+    "1": "{\"bump_var_function\": {\"code\": \"if ((activity[var] += var_inc * coeff) > 1e100) {\\n    for (int i = 1; i <= vars; i++) activity[i] *= 1e-100;\\n    var_inc *= 1e-100;\\n}\\nif (vsids.inHeap(var)) vsids.update(var);\\n// Additional exponential decay for older variables to prevent stagnation\\nif (conflicts % 1000 == 0) {\\n    for (int i = 1; i <= vars; i++) activity[i] *= 0.95;\\n    var_inc *= 0.95;\\n}\", \"title\": \"Periodic activity decay\", \"reason\": \"Periodically decaying all activities prevents older variables from dominating indefinitely, encouraging exploration of newer conflict-related variables.\"}, \"restart_function\": {\"code\": \"fast_lbd_sum = lbd_queue_size = lbd_queue_pos = 0;\\nbacktrack(0);\\nint phase_rand = rand() % 100;\\nif ((phase_rand -= 50) < 0)     for (int i = 1; i <= vars; i++) saved[i] = local_best[i];\\nelse if ((phase_rand -= 10) < 0) for (int i = 1; i <= vars; i++) saved[i] = -local_best[i];\\nelse if ((phase_rand -= 20) < 0) for (int i = 1; i <= vars; i++) saved[i] = rand() % 2 ? 1 : -1;\\nelse ;\", \"title\": \"Adjusted rephase probabilities\", \"reason\": \"Increasing the chance to use local_best and its negation improves phase reuse, while reducing random phases to avoid excessive noise.\"}, \"rephase_function\": {\"code\": \"rephases = 0, threshold *= 0.85, rephase_limit += 4096;\", \"title\": \"Faster threshold decay and smaller rephase limit increment\", \"reason\": \"More aggressive threshold decay and smaller rephase limit increment allow more frequent rephasing, helping escape local optima faster.\"}, \"restart_condition\": {\"code\": \"else if (lbd_queue_size == 50 && 0.9 * fast_lbd_sum / lbd_queue_size > slow_lbd_sum / conflicts) restart();\", \"title\": \"Tighter restart condition\", \"reason\": \"Increasing the multiplier from 0.8 to 0.9 makes the condition stricter, reducing unnecessary restarts and allowing more focused search.\"}, \"rephase_condition\": {\"code\": \"else if (rephases >= rephase_limit && conflicts > 1000) rephase();\", \"title\": \"Delay rephase until after initial search\", \"reason\": \"Adding a conflict threshold prevents premature rephasing early in the search, allowing the solver to build a stable phase pattern first.\"}}"
+  },
+  "PAR-2": {
+    "1": 41170.664000000004
+  },
+  "satisfiable": {
+    "1": 0
+  },
+  "unsatisfiable": {
+    "1": 2
+  },
+  "timeout": {
+    "1": 6
+  }
+}
