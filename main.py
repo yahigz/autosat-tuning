@@ -13,10 +13,20 @@ import signal
 import subprocess
 from pathlib import Path
 
-from utils import get_code, revise_file, clean_files, collect_results, \
-                  copy_folder, delete_InfiniteLoopInst, get_batch_id, train_init, check_reIteration
-from llm_api.base_api import get_llm_api
-from prompting import (
+from autosat_core.common import (
+    get_code,
+    revise_file,
+    clean_files,
+    collect_results,
+    copy_folder,
+    delete_InfiniteLoopInst,
+    get_batch_id,
+)
+from autosat_core.marker_adapter import MarkerSolverAdapter
+from autosat_core.tasks import TaskSpec, task_specs_from_config
+from utils import train_init, check_reIteration
+from autosat_core.llm_api.base_api import get_llm_api
+from autosat_core.prompting import (
     build_prompt_text,
     load_prompt_text,
     parse_structured_response,
@@ -25,9 +35,9 @@ from prompting import (
     build_tool_schema_all,
     build_structured_schema_all,
 )
-from execution.execution_worker import ExecutionWorker
-from evaluation.evaluate import evaluate
-from plotting import plot_training_curve
+from autosat_core.execution.execution_worker import ExecutionWorker
+from autosat_core.evaluation.evaluate import evaluate
+from autosat_core.plotting import plot_training_curve
 import warnings
 
 # ---------------------------------------------------------------------------
@@ -37,6 +47,11 @@ SOLVER_BASELINE_DIR = Path("solver/baseline")
 SOLVER_BASELINE_CPP = SOLVER_BASELINE_DIR / "EasySAT.cpp"
 SOLVER_TEMPLATE_DIR = Path("solver/template")
 PROMPTS_DIR = Path("prompts")
+SOLVER_ADAPTER = MarkerSolverAdapter(
+    name="EasySAT",
+    baseline_cpp=SOLVER_BASELINE_CPP,
+    template_cpp=SOLVER_TEMPLATE_DIR / "EasySAT.cpp",
+)
 
 _SHUTDOWN_IN_PROGRESS = False
 
@@ -80,28 +95,14 @@ _MARKER_RE = re.compile(r'<--([A-Za-z_]\w*)-->')
 
 def discover_available_tasks(baseline_cpp: Path = SOLVER_BASELINE_CPP) -> list[str]:
     """Return task names found as marker pairs in the baseline solver."""
-    if not baseline_cpp.exists():
-        raise FileNotFoundError(f"Baseline solver not found: {baseline_cpp}")
-    text = baseline_cpp.read_text(encoding="utf-8")
-    seen: dict[str, int] = {}
-    tasks: list[str] = []
-    for m in _MARKER_RE.finditer(text):
-        name = m.group(1)
-        seen[name] = seen.get(name, 0) + 1
-    for name, count in seen.items():
-        if count >= 2:
-            tasks.append(name)
-    return tasks
+    if baseline_cpp != SOLVER_ADAPTER.baseline_cpp:
+        return MarkerSolverAdapter(name="solver", baseline_cpp=baseline_cpp).available_task_names()
+    return SOLVER_ADAPTER.available_task_names()
 
 
 def extract_baseline_section(baseline_text: str, marker_name: str) -> str:
     """Return the code between the two <--marker_name--> markers."""
-    pattern = re.compile(
-        r'<--' + re.escape(marker_name) + r'-->\n(.*?)\n<--' + re.escape(marker_name) + r'-->',
-        re.DOTALL,
-    )
-    m = pattern.search(baseline_text)
-    return m.group(1).strip() if m else ""
+    return SOLVER_ADAPTER.extract_baseline_section(marker_name, baseline_text=baseline_text)
 
 
 def build_solver_source(
@@ -118,37 +119,18 @@ def build_solver_source(
     All markers are removed from the output. {{ timeout }} and {{ data_dir }}
     placeholders are substituted.
     """
-    text = baseline_cpp.read_text(encoding="utf-8")
-
-    def _replace_section(m_name: str, replacement: str) -> None:
-        nonlocal text
-        pattern = re.compile(
-            r'<--' + re.escape(m_name) + r'-->\n(.*?)\n<--' + re.escape(m_name) + r'-->',
-            re.DOTALL,
-        )
-        found = pattern.search(text)
-        if not found:
-            return
-        text = pattern.sub(replacement.strip(), text, count=1)
-
-    for name in discover_available_tasks(baseline_cpp):
-        provided = codes.get(name, "")
-        if provided and len(provided.strip()) >= 10:
-            _replace_section(name, provided.strip())
-        else:
-            baseline_code = extract_baseline_section(text, name)
-            _replace_section(name, baseline_code)
-
-    text = re.sub(r'\{\{\s*timeout\s*\}\}', str(timeout), text)
-    text = re.sub(r'\{\{\s*data_dir\s*\}\}', str(data_dir), text)
-    return text
+    adapter = SOLVER_ADAPTER if baseline_cpp == SOLVER_ADAPTER.baseline_cpp else MarkerSolverAdapter(
+        name="solver",
+        baseline_cpp=baseline_cpp,
+    )
+    return adapter.render_source(codes, substitutions={"timeout": str(timeout), "data_dir": str(data_dir)})
 
 
 def update_solver_template(codes: dict[str, str]) -> None:
     """Write solver/template/EasySAT.cpp with best-known code for every task."""
     SOLVER_TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
     for hdr in ("EasySAT.hpp", "heap.hpp"):
-        src = SOLVER_BASELINE_DIR / hdr
+        src = SOLVER_ADAPTER.baseline_cpp.parent / hdr
         dst = SOLVER_TEMPLATE_DIR / hdr
         if src.exists() and not dst.exists():
             import shutil as _shutil
@@ -343,14 +325,17 @@ def _render_solver_source(
 ) -> None:
     chosen = _strip_start_end_markers(answer_code)
     if len(chosen.strip()) < 10:
-        chosen = extract_baseline_section(SOLVER_BASELINE_CPP.read_text(encoding="utf-8"), task_name)
+        chosen = SOLVER_ADAPTER.extract_baseline_section(task_name)
     if len(chosen.strip()) < 10:
         raise ValueError(f"No valid code to inject for task={task_name}")
 
     codes = dict(extra_codes or {})
     codes[task_name] = chosen
 
-    rendered = build_solver_source(codes, timeout=timeout, data_dir=f'"{data_dir}"')
+    rendered = SOLVER_ADAPTER.render_source(
+        codes,
+        substitutions={"timeout": str(timeout), "data_dir": f'"{data_dir}"'},
+    )
     Path(target_file).parent.mkdir(parents=True, exist_ok=True)
     Path(target_file).write_text(rendered, encoding="utf-8")
 
@@ -634,14 +619,7 @@ def _run_eval_stage(args, final: dict, extra_params: dict, paths: dict) -> None:
 
 
 def _infer_task_from_code(code: str) -> str | None:
-    text = str(code or "").strip()
-    m = re.search(r"void\s+Solver::([A-Za-z_]\w*)\s*\(", text)
-    if m:
-        fn = m.group(1)
-        return {"restart": "restart_function", "rephase": "rephase_function", "bump_var": "bump_var_function"}.get(fn)
-    if "restart();" in text:
-        return "restart_condition"
-    return None
+    return SOLVER_ADAPTER.infer_task_name(code)
 
 
 # ---------------------------------------------------------------------------
@@ -686,7 +664,7 @@ def _normalize_original_result(args):
 # ---------------------------------------------------------------------------
 def _update_progress(args, run_id: str, baseline_par2: float | None, iterations_log: list[dict]) -> None:
     try:
-        from server import write_progress
+        from autosat_core.server import write_progress
         write_progress(
             run_id=run_id,
             baseline_par2=baseline_par2,
@@ -725,13 +703,18 @@ def main(args):
     sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, "reconfigure") else None
     _normalize_original_result(args)
 
-    # Discover tasks from baseline markers
+    # Discover tasks from config + baseline markers.
     available_tasks = discover_available_tasks()
-
-    raw_tasks = getattr(args, "optimize_tasks", None)
-    if isinstance(raw_tasks, str):
-        raw_tasks = [t.strip() for t in raw_tasks.split(",") if t.strip()]
-    task_sequence = [t for t in (raw_tasks or []) if t in available_tasks]
+    baseline_text = SOLVER_ADAPTER.baseline_text()
+    baseline_codes = {name: SOLVER_ADAPTER.extract_baseline_section(name, baseline_text=baseline_text) for name in available_tasks}
+    task_specs = task_specs_from_config(
+        getattr(args, "_loaded_config_payload", {}),
+        allowed_names=available_tasks,
+        baseline_codes=baseline_codes,
+        fallback_names=available_tasks,
+    )
+    SOLVER_ADAPTER.task_specs = tuple(task_specs)
+    task_sequence = [task.name for task in task_specs]
     if not task_sequence:
         fallback = getattr(args, "task", "")
         if fallback and fallback in available_tasks:
@@ -739,7 +722,7 @@ def main(args):
         else:
             task_sequence = available_tasks[:1]
     if not task_sequence:
-        raise ValueError("No valid tasks found. Check solver/baseline/EasySAT.cpp for markers.")
+        raise ValueError("No valid tasks found. Define tasks in config or add markers to the baseline solver.")
 
     selection_mode = str(getattr(args, "task_selection_mode", "random_one") or "random_one").lower()
     rand_seed = int(getattr(args, "rand_seed", 42) or 42)
@@ -760,7 +743,7 @@ def main(args):
     if bool(getattr(args, "enable_server", False)):
         port = int(getattr(args, "server_port", 8080) or 8080)
         try:
-            from server import start_server
+            from autosat_core.server import start_server
             start_server(port=port, progress_file=str(Path(args.results_root) / "progress.json"))
         except Exception as e:
             warnings.warn(f"[Server] Failed to start: {e}", stacklevel=2)
@@ -835,7 +818,6 @@ def main(args):
             {"time": results["time"].get("0"), "PAR-2": results["PAR-2"].get("0")},
         )
 
-    baseline_text = SOLVER_BASELINE_CPP.read_text(encoding="utf-8")
     baseline_par2 = results["PAR-2"].get("0")
 
     # Write-back tracking

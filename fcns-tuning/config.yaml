@@ -1,0 +1,27 @@
+# FCNS tuning configuration
+
+iteration_num: 20
+data_parallel_size: 7
+task_selection_mode: all
+rand_seed: 42
+
+llm_model: "deepseek-ai/DeepSeek-V4-Flash"
+use_structured: true
+temperature: 0.7
+
+baseline_cpp: "./solver/baseline/fcns.cpp"
+template_cpp: "./solver/template/fcns.cpp"
+train_data_dir: "./data/train"
+eval_data_dir: "./data/eval"
+
+timeout: 3000
+data_parallel_size: 7
+eval_parallel_size: 7
+resume_from_checkpoint: false
+run_eval: true
+keep_intermediate_results: true
+enable_server: true
+server_port: 8080
+
+prompt_original: "./prompts/original_prompt.txt"
+prompt_feedback: "./prompts/feedback_prompt.txt"

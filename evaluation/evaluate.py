@@ -104,7 +104,7 @@ if __name__ == '__main__':
     parser.add_argument('--SAT_solver_file_path', type=str, default='./template/EasySAT_eval/EasySAT_template.cpp',
                         help='SAT solver file path (NOTICE: auxiliary functions should be in the same directory).')
     parser.add_argument('--eval_data_dir', default='./evaluation/', type=str,
-                        help='the directory where cnf files are stored.')
+                        help='the directory where .cnf or .cnf.xz files are stored.')
     parser.add_argument('--results_save_path', type=str, default='./temp/eval_results/',
                         help='where the final result are saved.')
     parser.add_argument('--eval_parallel_size', type=int, default=16, help='parallel in K processions.')

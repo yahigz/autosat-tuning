@@ -3,12 +3,44 @@
 LLM-driven optimizer for SAT solver heuristics. Iteratively proposes C++ improvements,
 compiles and benchmarks them on SAT instances, then feeds results back to the model.
 
+Reusable core code now lives in `autosat_core/`, so a different solver can reuse
+the prompting, execution, evaluation, plotting, and source-rendering helpers.
+
+### Library API
+
+- Define optimization functions as `TaskSpec` objects from `autosat_core.tasks`.
+- Use `MarkerSolverAdapter` from `autosat_core.marker_adapter` for marker-based C++ solvers.
+- Build prompts with `build_prompt_text_for_tasks(...)`; the response schema stays fixed as `code`, `title`, `reason`.
+- Provide any solver-specific metadata or prompt text through task fields and config payloads.
+
+Example:
+
+```python
+from pathlib import Path
+from autosat_core import MarkerSolverAdapter, TaskSpec, build_prompt_text_for_tasks
+
+adapter = MarkerSolverAdapter(
+    name="MySolver",
+    baseline_cpp=Path("solver/baseline/MySolver.cpp"),
+    task_specs=[
+        TaskSpec(name="restart_function", label="Restart policy"),
+        TaskSpec(name="rephase_function", label="Rephase policy"),
+    ],
+)
+prompt = build_prompt_text_for_tasks(
+    base_prompt_text=Path("prompts/original_prompt.txt").read_text(),
+    task_specs=adapter.task_specs,
+    baseline_codes={t.name: adapter.extract_baseline_section(t.name) for t in adapter.task_specs},
+)
+```
+
 ---
 
 ## Directory layout
 
 ```
 autosat-tuning/
+├── autosat_core/             # reusable library for any solver
 ├── main.py                    # entry point
 ├── config.yaml                # main config (edit this)
 ├── pyproject.toml             # Python deps (managed by uv)
@@ -61,7 +93,9 @@ uv sync
 # 2. Put SAT instances into training and eval directories
 mkdir -p temp/data_train temp/data_eval
 cp your_cnf_files/*.cnf temp/data_train/
+cp your_cnf_files/*.cnf.xz temp/data_train/  # optional
 cp your_eval_cnf_files/*.cnf temp/data_eval/
+cp your_eval_cnf_files/*.cnf.xz temp/data_eval/  # optional
 
 # 3. Set API credentials
 cp .env.example .env      # fill in AUTOSAT_API_KEY etc.
@@ -107,6 +141,8 @@ Supported tasks out of the box:
 
 To add a new task: wrap a code region with markers, add metadata under
 `heuristic_modules:` in `config.yaml`.
+
+The solver accepts both plain `.cnf` and compressed `.cnf.xz` instances.
 
 ---
 
