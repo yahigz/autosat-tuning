@@ -81,6 +81,10 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def _log(message: str) -> None:
+    print(f"[FCNS] {time.strftime('%H:%M:%S')} {message}", flush=True)
+
+
 def _make_run_id(explicit: str = "") -> str:
     explicit = str(explicit or "").strip()
     return explicit or (time.strftime("run_%Y%m%d_%H%M%S") + f"_{os.getpid()}_{uuid.uuid4().hex[:8]}")
@@ -280,6 +284,7 @@ def _stderr_metrics(line: str) -> dict[str, Any]:
 def _compile_solver(source_cpp: Path, executable_path: Path) -> bool:
     executable_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["g++", "-O3", "-Wall", "-Wextra", "-std=c++17", str(source_cpp), "-o", str(executable_path)]
+    _log(f"Compiling {source_cpp.name}")
     result = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(result.stdout, end="", flush=True)
@@ -389,6 +394,7 @@ def _evaluate_source(
         return {"compile_ok": False, "score": [10**9, float("inf")]}, []
 
     worker_count = max(1, int(max_workers or 1))
+    _log(f"Evaluating {len(instances)} instances with {worker_count} worker(s)")
     if worker_count > 1 and len(instances) > 1:
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(worker_count, len(instances))) as executor:
             runs = list(executor.map(lambda instance: _run_solver(executable_path, instance, timeout_s), instances))
@@ -482,6 +488,7 @@ def _baseline_result(
     scale: PlotScale,
     max_workers: int,
 ) -> tuple[dict[str, Any], list[InstanceRun], dict[str, str]]:
+    _log("Running baseline evaluation")
     baseline_rendered = adapter.render_source({})
     baseline_cpp = temp_root / "baseline" / "fcns.cpp"
     baseline_cpp.parent.mkdir(parents=True, exist_ok=True)
@@ -746,6 +753,7 @@ def main(args: argparse.Namespace) -> None:
         )
 
     for iteration_index in range(int(checkpoint.get("next_iteration", 0)) if checkpoint else 0, iteration_num):
+        _log(f"Iteration {iteration_index + 1}/{iteration_num} start")
         current_mode = _task_for_iteration(task_names, selection_mode, iteration_index, rand_seed)
         all_tasks_mode = current_mode == "__all__"
         current_task = task_names[0] if all_tasks_mode else current_mode
@@ -785,6 +793,7 @@ def main(args: argparse.Namespace) -> None:
 
         for candidate in candidate_payloads:
             candidate_index = int(candidate["candidate_index"])
+            _log(f"Iteration {iteration_index + 1}: candidate {candidate_index + 1}/{batch_size}")
             payload = candidate["payload"]
             updates = _render_candidate_source(adapter, task_names, payload, all_tasks_mode)
             rendered_source = adapter.render_source(updates)
@@ -897,6 +906,7 @@ def main(args: argparse.Namespace) -> None:
     )
 
     if bool(config_payload.get("run_eval", True)) and eval_instances:
+        _log("Running eval evaluation")
         _evaluate_best_on_eval(
             adapter=adapter,
             rendered_source=str(best_state["rendered_source"]),
