@@ -662,6 +662,13 @@ def _execute_exploration_code(
     if not code or not code.strip():
         return {}
 
+    # Strip markdown code fences the model may include
+    stripped = re.sub(r"^```[a-zA-Z]*\n?", "", code.strip())
+    stripped = re.sub(r"\n?```$", "", stripped)
+    code = stripped.strip()
+    if not code:
+        return {}
+
     local_ns: dict[str, Any] = {}
     try:
         exec(compile(code, "<exploration_code>", "exec"), {}, local_ns)  # noqa: S102
