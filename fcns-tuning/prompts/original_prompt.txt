@@ -6,11 +6,26 @@ Here are the baseline results:
 
 {{ baseline_section }}
 
+{% if exploration_stats_section %}
+{{ exploration_stats_section }}
+
+{% endif %}
 Your code must be wrapped as:
 // start
 <your implementation>
 // end
 
+{% if exploration_stats_section %}
+Additionally, provide an `exploration_code` field containing a Python function that computes NEW graph statistics.
+The function signature must be exactly:
+  def get_statistics(n: int, m: int, adj_list: list[list[int]]) -> dict[str, float]:
+      # n: number of vertices, m: number of edges
+      # adj_list: 0-indexed adjacency list (adj_list[i] = list of neighbors of vertex i)
+      # return: dict of NUMERICAL statistics (all values must be int or float)
+The function will be run on each training graph. Results are aggregated and shown to you in future iterations to help you understand the data distribution.
+If exploration_stats_section is empty (first iteration), invent useful graph statistics (e.g. avg degree, density, clustering, degree variance).
+
+{% endif %}
 Tips:
 1) Write valid C++ (no pseudocode, no markdown fences inside the code).
 2) Before finalizing, perform a strict C++ syntax self-check: balanced braces/parentheses, semicolons, valid declarations.

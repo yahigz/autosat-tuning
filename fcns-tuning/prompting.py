@@ -1,6 +1,9 @@
 """FCNS-specific prompt helpers."""
 from __future__ import annotations
 
+import json
+from typing import Any, Dict, Sequence
+
 from autosat_core.prompting import *  # noqa: F401,F403
 from autosat_core.prompting import (  # noqa: F401
     build_prompt_text as _core_build_prompt_text,
@@ -63,13 +66,64 @@ def build_tool_schema(config_payload=None, task_name=None, fields=None):
     return _core_build_tool_schema(config_payload=config_payload, task_name=task_name, fields=fields)
 
 
-def build_tool_schema_all(tasks, fields=None):
-    return _core_build_tool_schema_all(tasks, fields=fields)
+def build_tool_schema_all(tasks, fields=None, enable_exploration: bool = False):
+    schema = _core_build_tool_schema_all(tasks, fields=fields)
+    if enable_exploration:
+        schema["input_schema"]["properties"]["exploration_code"] = {
+            "type": "string",
+            "description": (
+                "Python function `def get_statistics(n: int, m: int, adj_list: list[list[int]]) -> dict[str, float]`"
+                " that computes NEW numerical statistics about the graph. Return empty string if no new stats."
+            ),
+        }
+        schema["input_schema"]["required"] = list(schema["input_schema"].get("required", [])) + ["exploration_code"]
+    return schema
 
 
 def build_structured_schema(config_payload=None, task_name=None, fields=None):
     return _core_build_structured_schema(config_payload=config_payload, task_name=task_name, fields=fields)
 
 
-def build_structured_schema_all(tasks, fields=None):
-    return _core_build_structured_schema_all(tasks, fields=fields)
+def build_structured_schema_all(tasks, fields=None, enable_exploration: bool = False):
+    schema = _core_build_structured_schema_all(tasks, fields=fields)
+    if enable_exploration:
+        inner_schema = schema["json_schema"]["schema"]
+        inner_schema["properties"]["exploration_code"] = {"type": "string"}
+        inner_schema["required"] = list(inner_schema.get("required", [])) + ["exploration_code"]
+    return schema
+
+
+def parse_multi_response(content: str, tasks: Sequence[str]) -> Dict[str, Any]:
+    """Extended parse that also extracts exploration_code into '__exploration__' key."""
+    empty: Dict[str, Any] = {t: {"code": "", "title": "", "reason": ""} for t in tasks}
+    empty["__exploration__"] = {"code": ""}
+    try:
+        data = json.loads(content)
+    except Exception as exc:
+        print(f"[StructuredOutput][all] JSON parse error: {exc}. Raw: {content[:300]}", flush=True)
+        return empty
+
+    impls = data.get("implementations", [])
+    if not isinstance(impls, list):
+        print("[StructuredOutput][all] 'implementations' is not a list.", flush=True)
+        return empty
+
+    result: Dict[str, Any] = {}
+    for item in impls:
+        if not isinstance(item, dict):
+            continue
+        t = str(item.get("task", "") or "").strip()
+        if not t:
+            continue
+        result[t] = {
+            "code": str(item.get("code", "") or "").strip(),
+            "title": str(item.get("title", "") or "").strip(),
+            "reason": str(item.get("reason", "") or "").strip(),
+        }
+
+    for t in tasks:
+        if t not in result:
+            result[t] = {"code": "", "title": "", "reason": ""}
+
+    result["__exploration__"] = {"code": str(data.get("exploration_code", "") or "").strip()}
+    return result

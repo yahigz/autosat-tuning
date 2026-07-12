@@ -6,10 +6,26 @@ Here are the baseline results:
 
 {{ baseline_section }}
 
+{% if best_results_section %}
+{{ best_results_section }}
+
+{% endif %}
 Here are results of the previous iteration:
 
 {{ last_iter_section }}
 
+{% if exploration_stats_section %}
+{{ exploration_stats_section }}
+
+Additionally, provide an `exploration_code` field containing a Python function that computes NEW graph statistics not yet in the list above.
+The function signature must be exactly:
+  def get_statistics(n: int, m: int, adj_list: list[list[int]]) -> dict[str, float]:
+      # n: number of vertices, m: number of edges
+      # adj_list: 0-indexed adjacency list
+      # return: dict of NUMERICAL statistics (all values must be int or float)
+Return empty string in `exploration_code` if you have no new statistics to propose.
+
+{% endif %}
 Your code must be wrapped as:
 // start
 <your implementation>

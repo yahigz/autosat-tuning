@@ -65,12 +65,11 @@ class InstanceRun:
     final_colors: int
     final_time: float
     par2: float
-    timed_out: bools
+    timed_out: bool
     trace: list[dict[str, Any]]
     stdout: str
     stderr: list[str]
     exit_code: int
-    timed_out: bool
 
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
@@ -439,6 +438,8 @@ def _build_prompt(
     last_iter_result: Mapping[str, Any] | None,
     structured_output: bool,
     all_tasks_mode: bool,
+    exploration_stats_section: str = "",
+    best_results_section: str = "",
 ) -> str:
     base_prompt_text = load_prompt_text(str(prompt_path))
     return build_prompt_text_for_tasks(
@@ -449,6 +450,8 @@ def _build_prompt(
         last_iter_result=last_iter_result,
         structured_output=structured_output,
         all_tasks_mode=all_tasks_mode,
+        exploration_stats_section=exploration_stats_section,
+        best_results_section=best_results_section,
     )
 
 
@@ -462,17 +465,22 @@ def _query_llm(prompt_file: Path, args: argparse.Namespace, task_name: str) -> d
     return parsed
 
 
-def _query_llm_all(prompt_file: Path, args: argparse.Namespace, task_names: Sequence[str]) -> dict[str, dict[str, str]]:
+def _query_llm_all(
+    prompt_file: Path,
+    args: argparse.Namespace,
+    task_names: Sequence[str],
+    enable_exploration: bool = False,
+) -> dict[str, dict[str, str]]:
     llm_api = get_llm_api(args)
     temperature = float(getattr(args, "temperature", 1.0) or 1.0)
     prompt_text = prompt_file.read_text(encoding="utf-8")
 
     if getattr(llm_api, "_structured_output", False):
         if llm_api.__class__.__name__ == "GPTCallAPI":
-            raw = llm_api.call_structured_all(prompt_text, temperature, build_structured_schema_all(task_names))
+            raw = llm_api.call_structured_all(prompt_text, temperature, build_structured_schema_all(task_names, enable_exploration=enable_exploration))
             return parse_multi_response(raw, task_names)
         if llm_api.__class__.__name__ == "ElizaCallAPI":
-            raw = llm_api.call_structured_all(prompt_text, temperature, build_tool_schema_all(task_names))
+            raw = llm_api.call_structured_all(prompt_text, temperature, build_tool_schema_all(task_names, enable_exploration=enable_exploration))
             return parse_multi_response(raw, task_names)
 
     raw = llm_api.call_api(prompt_file=str(prompt_file), temperature=temperature)
@@ -526,11 +534,13 @@ def _progress_payload(
     baseline_summary: Mapping[str, Any],
     best_state: Mapping[str, Any],
     iterations_log: Sequence[Mapping[str, Any]],
+    primary_label: str = "colors",
+    secondary_label: str = "par2",
 ) -> dict[str, Any]:
     return {
         "run_id": run_id,
-        "metric_mode": "colors_par2",
-        "metric_labels": {"primary": "colors", "secondary": "par2"},
+        "metric_mode": f"{primary_label}_{secondary_label}",
+        "metric_labels": {"primary": primary_label, "secondary": secondary_label},
         "baseline": baseline_summary,
         "best": best_state,
         "iterations": list(iterations_log),
@@ -603,11 +613,155 @@ def _iter_prompt_context(
         "code": str(payload.get("code", "") or ""),
         "title": str(payload.get("title", "") or ""),
         "reason": str(payload.get("reason", "") or ""),
+        "colors": summary.get("total_colors") if summary else None,
+        "par2": summary.get("par2") if summary else None,
+        "time": summary.get("total_time") if summary else None,
+        "timed_out": summary.get("timed_out") if summary else None,
     }
 
 
 def _write_progress(results_root: Path, payload: Mapping[str, Any]) -> None:
     write_progress(payload, progress_file=str(results_root / "progress.json"))
+
+
+def _format_best_results_section(
+    best_by_primary: Mapping[str, Any],
+    best_by_secondary: Mapping[str, Any],
+    primary_label: str,
+    secondary_label: str,
+    primary_objective: str,
+) -> str:
+    direction = "lower" if primary_objective == "min" else "higher"
+    lines = [
+        "=== Best results (tracked across all iterations) ===",
+        f"PRIMARY metric: {primary_label} ({direction} is better)",
+    ]
+    bp = best_by_primary
+    bs = best_by_secondary
+    lines.append(
+        f"Best by {primary_label:<10}: iter={bp.get('iter', '?'):<4} "
+        f"colors={bp.get('total_colors', '?'):<6} "
+        f"par2={bp.get('par2', '?'):.2f}  "
+        f"time={bp.get('total_time', '?'):.2f}s"
+    )
+    lines.append(
+        f"Best by {secondary_label:<10}: iter={bs.get('iter', '?'):<4} "
+        f"colors={bs.get('total_colors', '?'):<6} "
+        f"par2={bs.get('par2', '?'):.2f}  "
+        f"time={bs.get('total_time', '?'):.2f}s"
+    )
+    return "\n".join(lines)
+
+
+def _execute_exploration_code(
+    code: str,
+    instances: Sequence[Any],
+    timeout_per_instance: float,
+) -> dict[str, dict[str, float]]:
+    """Run model-generated get_statistics(n, m, adj_list) on all instances and aggregate."""
+    if not code or not code.strip():
+        return {}
+
+    local_ns: dict[str, Any] = {}
+    try:
+        exec(compile(code, "<exploration_code>", "exec"), {}, local_ns)  # noqa: S102
+    except Exception as exc:
+        _log(f"[Exploration] exec error: {exc}")
+        return {}
+
+    fn = local_ns.get("get_statistics")
+    if not callable(fn):
+        _log("[Exploration] get_statistics not found in exploration_code")
+        return {}
+
+    per_instance_results: list[dict[str, float]] = []
+    for inst in instances:
+        adj_list = [[] for _ in range(inst.n)]
+        for u, v in inst.edges:
+            adj_list[u].append(v)
+            adj_list[v].append(u)
+
+        result_holder: list[Any] = [None]
+        error_holder: list[Any] = [None]
+
+        def _run(fn=fn, n=inst.n, m=len(inst.edges), adj=adj_list, rh=result_holder, eh=error_holder):
+            try:
+                rh[0] = fn(n, m, adj)
+            except Exception as exc:
+                eh[0] = exc
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        t.join(timeout=timeout_per_instance)
+        if t.is_alive():
+            _log(f"[Exploration] timeout on instance {inst.name}")
+            continue
+        if error_holder[0] is not None:
+            _log(f"[Exploration] error on {inst.name}: {error_holder[0]}")
+            continue
+        raw = result_holder[0]
+        if not isinstance(raw, dict):
+            _log(f"[Exploration] non-dict result on {inst.name}")
+            continue
+        validated = {k: float(v) for k, v in raw.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+        if validated:
+            per_instance_results.append(validated)
+
+    if not per_instance_results:
+        return {}
+
+    all_keys: set[str] = set()
+    for r in per_instance_results:
+        all_keys.update(r.keys())
+
+    aggregated: dict[str, dict[str, float]] = {}
+    for key in sorted(all_keys):
+        values = [r[key] for r in per_instance_results if key in r]
+        if not values:
+            continue
+        n = len(values)
+        mean = sum(values) / n
+        variance = sum((v - mean) ** 2 for v in values) / n
+        aggregated[key] = {
+            "mean": round(mean, 4),
+            "min": round(min(values), 4),
+            "max": round(max(values), 4),
+            "std": round(variance ** 0.5, 4),
+        }
+    return aggregated
+
+
+def _format_exploration_stats_section(accumulated: Mapping[str, Any]) -> str:
+    if not accumulated:
+        return ""
+    already = ", ".join(sorted(accumulated.keys()))
+    lines = [
+        "=== Exploration Statistics (computed on training data) ===",
+        f"Already collected — do NOT re-collect these keys: {already}",
+    ]
+    for key in sorted(accumulated.keys()):
+        agg = accumulated[key]
+        lines.append(
+            f"  {key:<20}: mean={agg.get('mean', '?'):<8} "
+            f"min={agg.get('min', '?'):<8} "
+            f"max={agg.get('max', '?'):<8} "
+            f"std={agg.get('std', '?')}"
+        )
+    lines.append("Provide NEW stat names in exploration_code that are not listed above.")
+    return "\n".join(lines)
+
+
+def _load_exploration_stats(results_root: Path) -> dict[str, Any]:
+    path = results_root / "exploration_stats.json"
+    if not path.exists():
+        return {"accumulated": {}, "iterations": []}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {"accumulated": {}, "iterations": []}
 
 
 def _load_checkpoint(checkpoint_dir: Path) -> dict[str, Any] | None:
@@ -688,6 +842,12 @@ def main(args: argparse.Namespace) -> None:
     args.results_root = str(results_root)
     args.temp_root = str(temp_root)
 
+    primary_label = str(config_payload.get("primary_label", "colors"))
+    secondary_label = str(config_payload.get("secondary_label", "par2"))
+    primary_objective = str(config_payload.get("primary_objective", "min")).lower()
+    enable_exploration = bool(config_payload.get("enable_exploration", False))
+    exploration_timeout = float(config_payload.get("exploration_timeout", 5.0) or 5.0)
+
     train_instances = _load_instances(train_data_dir)
     eval_instances = _load_instances(eval_data_dir)
     scale = PlotScale(
@@ -724,35 +884,52 @@ def main(args: argparse.Namespace) -> None:
         max_workers=data_parallel_size,
     )
 
+    _baseline_trace_runs = [
+        {
+            "name": run.name,
+            "final_colors": run.final_colors,
+            "final_time": run.final_time,
+            "final_timed_out": run.timed_out,
+            "final_par2": run.par2,
+            "trace": run.trace,
+        }
+        for run in baseline_runs
+    ]
     best_state: dict[str, Any] = {
         "score": baseline_summary.get("score", [10**9, float("inf")]),
         "summary": baseline_summary,
         "updates": {},
         "rendered_source": baseline_state["source"],
-        "trace_runs": [
-            {
-                "name": run.name,
-                "final_colors": run.final_colors,
-                "final_time": run.final_time,
-                "final_timed_out": run.timed_out,
-                "final_par2": run.par2,
-                "trace": run.trace,
-            }
-            for run in baseline_runs
-        ],
+        "trace_runs": _baseline_trace_runs,
     }
+    global_best_state: dict[str, Any] = dict(best_state)
 
     iterations_log: list[dict[str, Any]] = []
     all_iteration_runs: list[list[dict[str, Any]]] = [best_state["trace_runs"]]
 
+    def _summary_to_best_record(summary: Mapping[str, Any], iter_idx: int) -> dict[str, Any]:
+        return {
+            "iter": iter_idx,
+            "total_colors": summary.get("total_colors", float("inf")),
+            "par2": float(summary.get("par2", float("inf"))),
+            "total_time": float(summary.get("total_time", float("inf"))),
+        }
+
+    best_by_primary: dict[str, Any] = _summary_to_best_record(baseline_summary, 0)
+    best_by_secondary: dict[str, Any] = _summary_to_best_record(baseline_summary, 0)
+    exploration_state: dict[str, Any] = _load_exploration_stats(results_root)
+
     if checkpoint and checkpoint.get("best_state"):
         best_state = checkpoint["best_state"]
+        global_best_state = checkpoint.get("global_best_state", dict(best_state))
+        best_by_primary = checkpoint.get("best_by_primary", best_by_primary)
+        best_by_secondary = checkpoint.get("best_by_secondary", best_by_secondary)
         iterations_log = list(checkpoint.get("iterations_log", []))
         all_iteration_runs = list(checkpoint.get("all_iteration_runs", all_iteration_runs))
 
     _write_progress(
         results_root,
-        _progress_payload(run_id, baseline_summary, best_state, iterations_log),
+        _progress_payload(run_id, baseline_summary, best_state, iterations_log, primary_label, secondary_label),
     )
 
     if not checkpoint:
@@ -762,6 +939,9 @@ def main(args: argparse.Namespace) -> None:
                 "run_id": run_id,
                 "next_iteration": 0,
                 "best_state": best_state,
+                "global_best_state": global_best_state,
+                "best_by_primary": best_by_primary,
+                "best_by_secondary": best_by_secondary,
                 "iterations_log": iterations_log,
                 "all_iteration_runs": all_iteration_runs,
             },
@@ -780,26 +960,31 @@ def main(args: argparse.Namespace) -> None:
         if iterations_log:
             last_iter_result = iterations_log[-1].get("best_prompt_context")
 
+        exploration_stats_section = _format_exploration_stats_section(exploration_state.get("accumulated", {})) if enable_exploration else ""
+        best_results_section = _format_best_results_section(best_by_primary, best_by_secondary, primary_label, secondary_label, primary_objective) if iterations_log else ""
+
         prompt_text = _build_prompt(
             prompt_feedback if iterations_log else prompt_original,
             task_specs,
             baseline_codes,
             baseline_info={
-                "colors": best_state["summary"].get("total_colors"),
-                "time": best_state["summary"].get("total_time"),
-                "timed_out": best_state["summary"].get("timed_out"),
-                "par2": best_state["summary"].get("par2"),
+                "colors": baseline_summary.get("total_colors"),
+                "time": baseline_summary.get("total_time"),
+                "timed_out": baseline_summary.get("timed_out"),
+                "par2": baseline_summary.get("par2"),
             },
             last_iter_result=last_iter_result,
             structured_output=structured_output,
             all_tasks_mode=all_tasks_mode,
+            exploration_stats_section=exploration_stats_section,
+            best_results_section=best_results_section,
         )
         prompt_path.write_text(prompt_text, encoding="utf-8")
 
         candidate_payloads: list[dict[str, Any]] = []
         for candidate_index in range(batch_size):
             if all_tasks_mode:
-                payload = _query_llm_all(prompt_path, args, task_names)
+                payload = _query_llm_all(prompt_path, args, task_names, enable_exploration=enable_exploration)
             else:
                 payload = _query_llm(prompt_path, args, current_task)
             candidate_payloads.append({"candidate_index": candidate_index, "payload": payload})
@@ -860,6 +1045,29 @@ def main(args: argparse.Namespace) -> None:
             "rendered_source": best_candidate["rendered_source"],
             "trace_runs": best_candidate["trace_runs"],
         }
+        global_improved = _select_better(global_best_state["summary"], best_candidate["summary"])
+        if global_improved:
+            global_best_state = dict(best_state)
+
+        s = best_candidate["summary"]
+        if float(s.get("total_colors", float("inf"))) < float(best_by_primary.get("total_colors", float("inf"))):
+            best_by_primary = _summary_to_best_record(s, iteration_index + 1)
+        if float(s.get("par2", float("inf"))) < float(best_by_secondary.get("par2", float("inf"))):
+            best_by_secondary = _summary_to_best_record(s, iteration_index + 1)
+
+        if enable_exploration:
+            exp_code = str(best_candidate["payload"].get("__exploration__", {}).get("code", "") if all_tasks_mode else "")
+            if exp_code.strip():
+                new_stats = _execute_exploration_code(exp_code, train_instances, exploration_timeout)
+                if new_stats:
+                    accumulated = dict(exploration_state.get("accumulated", {}))
+                    accumulated.update(new_stats)
+                    iter_entry = {"iter": iteration_index, "stat_keys": sorted(new_stats.keys())}
+                    exploration_state = {
+                        "accumulated": accumulated,
+                        "iterations": list(exploration_state.get("iterations", [])) + [iter_entry],
+                    }
+                    _atomic_write_json(results_root / "exploration_stats.json", exploration_state)
 
         iterations_log.append(
             {
@@ -889,15 +1097,14 @@ def main(args: argparse.Namespace) -> None:
             run_label=run_id,
         )
 
-        if best_rendered != best_state["rendered_source"]:
-            best_rendered = best_state["rendered_source"]
-        TEMPLATE_CPP.parent.mkdir(parents=True, exist_ok=True)
-        TEMPLATE_CPP.write_text(best_rendered, encoding="utf-8")
+        if global_improved:
+            TEMPLATE_CPP.parent.mkdir(parents=True, exist_ok=True)
+            TEMPLATE_CPP.write_text(global_best_state["rendered_source"], encoding="utf-8")
 
         _write_progress(
             results_root,
             {
-                **_progress_payload(run_id, baseline_summary, best_state, iterations_log),
+                **_progress_payload(run_id, baseline_summary, best_state, iterations_log, primary_label, secondary_label),
                 "iteration": iteration_index,
             },
         )
@@ -907,6 +1114,9 @@ def main(args: argparse.Namespace) -> None:
                 "run_id": run_id,
                 "next_iteration": iteration_index + 1,
                 "best_state": best_state,
+                "global_best_state": global_best_state,
+                "best_by_primary": best_by_primary,
+                "best_by_secondary": best_by_secondary,
                 "iterations_log": iterations_log,
                 "all_iteration_runs": all_iteration_runs,
             },

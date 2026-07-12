@@ -186,7 +186,7 @@ def _format_baseline_section(
 ) -> str:
     lines = ["=== Baseline (iteration 0) ==="]
     if baseline_par2 is not None:
-        lines.append(f"PAR-2: {baseline_par2}")
+        lines.append(f"par2: {baseline_par2}")
     if isinstance(baseline_code, Mapping):
         for t, c in baseline_code.items():
             if c:
@@ -202,7 +202,7 @@ def _format_last_iter_section(last_iter: Mapping[str, Any]) -> str:
     lines = ["=== Last iteration result ==="]
     par2 = last_iter.get("par2")
     if par2 is not None:
-        lines.append(f"PAR-2: {par2}")
+        lines.append(f"par2: {par2}")
     colors = last_iter.get("colors")
     if colors is not None:
         lines.append(f"Colors: {colors}")
@@ -282,6 +282,8 @@ def build_prompt_text_for_tasks(
     all_tasks_mode: bool = False,
     default_modules: Mapping[str, Mapping[str, str]] | None = None,
     structured_output_fields: Sequence[str] | None = None,
+    exploration_stats_section: str = "",
+    best_results_section: str = "",
 ) -> str:
     modules = [_task_to_mapping(task) for task in task_specs]
     if baseline_codes is None:
@@ -332,6 +334,8 @@ def build_prompt_text_for_tasks(
         heuristics_section=heuristics_section,
         baseline_section=baseline_section,
         last_iter_section=last_iter_section,
+        exploration_stats_section=exploration_stats_section,
+        best_results_section=best_results_section,
     )
 
     if structured_output:

@@ -26,3 +26,12 @@ server_port: 8080
 
 prompt_original: "./prompts/original_prompt.txt"
 prompt_feedback: "./prompts/feedback_prompt.txt"
+
+primary_metric: colors
+primary_label: "colors"
+primary_objective: min
+secondary_metric: par2
+secondary_label: "par2"
+
+enable_exploration: true
+exploration_timeout: 5.0
