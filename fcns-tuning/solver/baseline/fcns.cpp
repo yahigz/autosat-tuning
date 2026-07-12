@@ -312,100 +312,98 @@ struct Solver {
         }
         return {used_colors, result};
     }
-};
 
-vector<int> greedy_coloring(const vector<vector<int>>& graph) {
-    // <--greedy_initial_solution-->
-    int n = static_cast<int>(graph.size());
-    vector<int> color(n, -1);
-    set<pair<int, int>> st;
-    vector<int> cnt_neigh(n);
+    vector<int> greedy_coloring(const vector<vector<int>>& graph) {
+        // <--greedy_initial_solution-->
+        set<pair<int, int>> st;
+        vector<int> cnt_neigh(n);
 
-    for (int i = 0; i < n; ++i) {
-        cnt_neigh[i] = static_cast<int>(graph[i].size());
-        st.insert({-cnt_neigh[i], i});
-    }
+        for (int i = 0; i < n; ++i) {
+            cnt_neigh[i] = static_cast<int>(graph[i].size());
+            st.insert({-cnt_neigh[i], i});
+        }
 
-    int cnt_colors = 0;
-    while (!st.empty()) {
-        int v = st.begin()->second;
-        st.erase(st.begin());
-        color[v] = cnt_colors++;
+        int cnt_colors = 0;
+        while (!st.empty()) {
+            int v = st.begin()->second;
+            st.erase(st.begin());
+            colouring[v] = cnt_colors++;
 
-        bool changed = true;
-        vector<int> cnt_neigh_to_s(n, 0);
-        set<pair<int, int>> st_s;
-        vector<char> spoiled(n, 0);
+            bool changed = true;
+            vector<int> cnt_neigh_to_s(n, 0);
+            set<pair<int, int>> st_s;
+            vector<char> spoiled(n, 0);
 
-        while (changed) {
-            changed = false;
+            while (changed) {
+                changed = false;
 
-            for (int j : graph[v]) {
-                if (color[j] != -1) {
-                    continue;
-                }
-                spoiled[j] = 1;
-                st.erase({-cnt_neigh[j], j});
-                --cnt_neigh[j];
-                st.insert({-cnt_neigh[j], j});
-            }
-
-            for (int j : graph[v]) {
-                if (color[j] != -1) {
-                    continue;
-                }
-                for (int to : graph[j]) {
-                    if (color[to] != -1 || spoiled[to]) {
+                for (int j : graph[v]) {
+                    if (colouring[j] != -1) {
                         continue;
                     }
-                    st_s.erase({-cnt_neigh_to_s[to], to});
-                    ++cnt_neigh_to_s[to];
-                    st_s.insert({-cnt_neigh_to_s[to], to});
+                    spoiled[j] = 1;
+                    st.erase({-cnt_neigh[j], j});
+                    --cnt_neigh[j];
+                    st.insert({-cnt_neigh[j], j});
                 }
-            }
 
-            while (!st_s.empty()) {
-                int candidate = st_s.begin()->second;
-                if (color[candidate] == -1 && !spoiled[candidate]) {
-                    break;
-                }
-                st_s.erase(st_s.begin());
-            }
-
-            int next_v = -1;
-            if (!st_s.empty()) {
-                next_v = st_s.begin()->second;
-                st_s.erase(st_s.begin());
-            } else {
-                for (const auto& [neg_degree, candidate] : st) {
-                    (void)neg_degree;
-                    if (color[candidate] == -1 && !spoiled[candidate]) {
-                        next_v = candidate;
-                        break;
+                for (int j : graph[v]) {
+                    if (colouring[j] != -1) {
+                        continue;
+                    }
+                    for (int to : graph[j]) {
+                        if (colouring[to] != -1 || spoiled[to]) {
+                            continue;
+                        }
+                        st_s.erase({-cnt_neigh_to_s[to], to});
+                        ++cnt_neigh_to_s[to];
+                        st_s.insert({-cnt_neigh_to_s[to], to});
                     }
                 }
-            }
 
-            if (next_v != -1) {
-                v = next_v;
-                st.erase({-cnt_neigh[v], v});
-                color[v] = cnt_colors - 1;
-                changed = true;
+                while (!st_s.empty()) {
+                    int candidate = st_s.begin()->second;
+                    if (colouring[candidate] == -1 && !spoiled[candidate]) {
+                        break;
+                    }
+                    st_s.erase(st_s.begin());
+                }
+
+                int next_v = -1;
+                if (!st_s.empty()) {
+                    next_v = st_s.begin()->second;
+                    st_s.erase(st_s.begin());
+                } else {
+                    for (const auto& [neg_degree, candidate] : st) {
+                        (void)neg_degree;
+                        if (colouring[candidate] == -1 && !spoiled[candidate]) {
+                            next_v = candidate;
+                            break;
+                        }
+                    }
+                }
+
+                if (next_v != -1) {
+                    v = next_v;
+                    st.erase({-cnt_neigh[v], v});
+                    colouring[v] = cnt_colors - 1;
+                    changed = true;
+                }
             }
         }
-    }
 
-    vector<int> remap(n, -1);
-    int next_color = 0;
-    for (int v = 0; v < n; ++v) {
-        if (remap[color[v]] == -1) {
-            remap[color[v]] = next_color++;
+        vector<int> remap(n, -1);
+        int next_color = 0;
+        for (int v = 0; v < n; ++v) {
+            if (remap[colouring[v]] == -1) {
+                remap[colouring[v]] = next_color++;
+            }
+            colouring[v] = remap[colouring[v]];
         }
-        color[v] = remap[color[v]];
+        return colouring;
+        // <--greedy_initial_solution-->
     }
-    return color;
-    // <--greedy_initial_solution-->
-}
+};
 
 int count_used_colors(const vector<int>& colors) {
     int used = 0;
@@ -417,11 +415,15 @@ int count_used_colors(const vector<int>& colors) {
 
 vector<int> make_best_coloring(const vector<vector<int>>& graph,
                                const chrono::steady_clock::time_point& launch_time) {
+    int m = 0;
+    for (const auto& neighbors : graph) {
+        m += static_cast<int>(neighbors.size());
+    }
     int n = static_cast<int>(graph.size());
-    vector<int> best = greedy_coloring(graph);
+    uint64_t base_seed = 51;
+    vector<int> best = Solver(n, m, graph, n, base_seed).greedy_coloring(graph);
     int best_colors = count_used_colors(best);
 
-    uint64_t base_seed = static_cast<uint64_t>(chrono::high_resolution_clock::now().time_since_epoch().count());
     vector<int> b_values = {1, 2, 4, 6, 8, 15, 25, 40};
     sort(b_values.begin(), b_values.end());
     b_values.erase(unique(b_values.begin(), b_values.end()), b_values.end());
@@ -432,7 +434,7 @@ vector<int> make_best_coloring(const vector<vector<int>>& graph,
         int b = b_values[attempt % static_cast<int>(b_values.size())];
         int max_steps = 1000 * n;
         uint64_t seed = base_seed + static_cast<uint64_t>(attempt) * 0x9e3779b97f4a7c15ULL;
-        Solver solver(n, 0, graph, target_k, seed);
+        Solver solver(n, m, graph, target_k, seed);
         auto [used_colors, colors] = solver.FCNS(b, max_steps);
         if (static_cast<int>(colors.size()) != n) {
             // it means that the solver failed to color all vertices, so we skip this attempt

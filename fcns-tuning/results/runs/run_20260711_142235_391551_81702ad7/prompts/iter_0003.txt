@@ -1,0 +1,885 @@
+You are a graph colouring solver researcher. Optimize the heuristic parameters of a C++ Forward-Checking Neighbourhood Search (FCNS) graph colouring solver. The target parameter is a number of coloUrs.
+
+=== uvertex_function - Uncoloured vertex choice ===
+Description: Select the next uncoloured vertex to colour during the search process.
+Signature: int Solver::UVERTEX()
+Insertion: Replace the full body of Solver::UVERTEX().
+Baseline code:
+vector<int> candidates;
+        vector<int> fallback;
+        for (int v = 0; v < n; ++v) {
+            if (in_C[v]) {
+                continue;
+            }
+            fallback.push_back(v);
+            if (domain_size[v] > 1) {
+                candidates.push_back(v);
+            }
+        }
+        const vector<int>& pool = candidates.empty() ? fallback : candidates;
+        uniform_int_distribution<int> dist(0, static_cast<int>(pool.size()) - 1);
+        return pool[dist(rng)];
+
+=== cvertex_function - Rollback vertex choice ===
+Description: Choose which colored vertices should be uncoloured when the solver needs to recover from a dead end. The number of vertices to uncolour is determined by parameter B, which is passed to the FCNS function.
+Signature: int Solver::CVERTEX()
+Insertion: Replace the full body of Solver::CVERTEX().
+Baseline code:
+int best_domain = -1;
+        int best_degree = numeric_limits<int>::max();
+        vector<int> candidates;
+
+        for (int v = 0; v < n; ++v) {
+            if (!in_C[v]) {
+                continue;
+            }
+            if (domain_size[v] > best_domain) {
+                best_domain = domain_size[v];
+                best_degree = degree[v];
+                candidates.clear();
+                candidates.push_back(v);
+            } else if (domain_size[v] == best_domain) {
+                if (degree[v] < best_degree) {
+                    best_degree = degree[v];
+                    candidates.clear();
+                    candidates.push_back(v);
+                } else if (degree[v] == best_degree) {
+                    candidates.push_back(v);
+                }
+            }
+        }
+
+        uniform_int_distribution<int> dist(0, static_cast<int>(candidates.size()) - 1);
+        return candidates[dist(rng)];
+
+=== colour_function - Color selection policy ===
+Description: Choose the best available color for the selected vertex u from the legal domain D.
+Signature: int Solver::COLOUR(int u, const vector<int>& D)
+Insertion: Replace the full body of Solver::COLOUR(int u, const vector<int>& D).
+Baseline code:
+if (D.empty()) {
+            return -1;
+        }
+
+        vector<int> shuffled = D;
+        shuffle(shuffled.begin(), shuffled.end(), rng);
+
+        int remembered_color = remembered[u];
+        if (colour_prefers_different) {
+            for (int c : shuffled) {
+                if (c != remembered_color) {
+                    colour_prefers_different = false;
+                    return c;
+                }
+            }
+            return shuffled.front();
+        }
+
+        for (int c : shuffled) {
+            if (c == remembered_color) {
+                return c;
+            }
+        }
+        return shuffled.front();
+
+=== greedy_initial_solution - Greedy initial solution ===
+Description: Construct an initial solution for the graph coloring problem using a greedy approach. It allows to approximate the solution quickly, which can be used as a starting point for the FCNS search. The output should contain a vector of colors assigned to each vertex in the graph (both 0-indexed). Do not be afraid to try a totally novel solution here, it is important to check completely different approaches.
+Signature: vector<int> Solver::greedy_coloring(const vector<vector<int>>& graph)
+Insertion: Replace the full body of Solver::greedy_coloring(const vector<vector<int>>& graph).
+Baseline code:
+set<pair<int, int>> st;
+        vector<int> cnt_neigh(n);
+
+        for (int i = 0; i < n; ++i) {
+            cnt_neigh[i] = static_cast<int>(graph[i].size());
+            st.insert({-cnt_neigh[i], i});
+        }
+
+        int cnt_colors = 0;
+        while (!st.empty()) {
+            int v = st.begin()->second;
+            st.erase(st.begin());
+            colouring[v] = cnt_colors++;
+
+            bool changed = true;
+            vector<int> cnt_neigh_to_s(n, 0);
+            set<pair<int, int>> st_s;
+            vector<char> spoiled(n, 0);
+
+            while (changed) {
+                changed = false;
+
+                for (int j : graph[v]) {
+                    if (colouring[j] != -1) {
+                        continue;
+                    }
+                    spoiled[j] = 1;
+                    st.erase({-cnt_neigh[j], j});
+                    --cnt_neigh[j];
+                    st.insert({-cnt_neigh[j], j});
+                }
+
+                for (int j : graph[v]) {
+                    if (colouring[j] != -1) {
+                        continue;
+                    }
+                    for (int to : graph[j]) {
+                        if (colouring[to] != -1 || spoiled[to]) {
+                            continue;
+                        }
+                        st_s.erase({-cnt_neigh_to_s[to], to});
+                        ++cnt_neigh_to_s[to];
+                        st_s.insert({-cnt_neigh_to_s[to], to});
+                    }
+                }
+
+                while (!st_s.empty()) {
+                    int candidate = st_s.begin()->second;
+                    if (colouring[candidate] == -1 && !spoiled[candidate]) {
+                        break;
+                    }
+                    st_s.erase(st_s.begin());
+                }
+
+                int next_v = -1;
+                if (!st_s.empty()) {
+                    next_v = st_s.begin()->second;
+                    st_s.erase(st_s.begin());
+                } else {
+                    for (const auto& [neg_degree, candidate] : st) {
+                        (void)neg_degree;
+                        if (colouring[candidate] == -1 && !spoiled[candidate]) {
+                            next_v = candidate;
+                            break;
+                        }
+                    }
+                }
+
+                if (next_v != -1) {
+                    v = next_v;
+                    st.erase({-cnt_neigh[v], v});
+                    colouring[v] = cnt_colors - 1;
+                    changed = true;
+                }
+            }
+        }
+
+        vector<int> remap(n, -1);
+        int next_color = 0;
+        for (int v = 0; v < n; ++v) {
+            if (remap[colouring[v]] == -1) {
+                remap[colouring[v]] = next_color++;
+            }
+            colouring[v] = remap[colouring[v]];
+        }
+        return colouring;
+
+Here are the baseline results:
+
+=== Baseline (iteration 0) ===
+colors: 448
+time: 5340.726185199999
+timed_out: 0
+par2: 18586.3061852
+
+uvertex_function:
+vector<int> candidates;
+        vector<int> fallback;
+        for (int v = 0; v < n; ++v) {
+            if (in_C[v]) {
+                continue;
+            }
+            fallback.push_back(v);
+            if (domain_size[v] > 1) {
+                candidates.push_back(v);
+            }
+        }
+        const vector<int>& pool = candidates.empty() ? fallback : candidates;
+        uniform_int_distribution<int> dist(0, static_cast<int>(pool.size()) - 1);
+        return pool[dist(rng)];
+
+cvertex_function:
+int best_domain = -1;
+        int best_degree = numeric_limits<int>::max();
+        vector<int> candidates;
+
+        for (int v = 0; v < n; ++v) {
+            if (!in_C[v]) {
+                continue;
+            }
+            if (domain_size[v] > best_domain) {
+                best_domain = domain_size[v];
+                best_degree = degree[v];
+                candidates.clear();
+                candidates.push_back(v);
+            } else if (domain_size[v] == best_domain) {
+                if (degree[v] < best_degree) {
+                    best_degree = degree[v];
+                    candidates.clear();
+                    candidates.push_back(v);
+                } else if (degree[v] == best_degree) {
+                    candidates.push_back(v);
+                }
+            }
+        }
+
+        uniform_int_distribution<int> dist(0, static_cast<int>(candidates.size()) - 1);
+        return candidates[dist(rng)];
+
+colour_function:
+if (D.empty()) {
+            return -1;
+        }
+
+        vector<int> shuffled = D;
+        shuffle(shuffled.begin(), shuffled.end(), rng);
+
+        int remembered_color = remembered[u];
+        if (colour_prefers_different) {
+            for (int c : shuffled) {
+                if (c != remembered_color) {
+                    colour_prefers_different = false;
+                    return c;
+                }
+            }
+            return shuffled.front();
+        }
+
+        for (int c : shuffled) {
+            if (c == remembered_color) {
+                return c;
+            }
+        }
+        return shuffled.front();
+
+greedy_initial_solution:
+set<pair<int, int>> st;
+        vector<int> cnt_neigh(n);
+
+        for (int i = 0; i < n; ++i) {
+            cnt_neigh[i] = static_cast<int>(graph[i].size());
+            st.insert({-cnt_neigh[i], i});
+        }
+
+        int cnt_colors = 0;
+        while (!st.empty()) {
+            int v = st.begin()->second;
+            st.erase(st.begin());
+            colouring[v] = cnt_colors++;
+
+            bool changed = true;
+            vector<int> cnt_neigh_to_s(n, 0);
+            set<pair<int, int>> st_s;
+            vector<char> spoiled(n, 0);
+
+            while (changed) {
+                changed = false;
+
+                for (int j : graph[v]) {
+                    if (colouring[j] != -1) {
+                        continue;
+                    }
+                    spoiled[j] = 1;
+                    st.erase({-cnt_neigh[j], j});
+                    --cnt_neigh[j];
+                    st.insert({-cnt_neigh[j], j});
+                }
+
+                for (int j : graph[v]) {
+                    if (colouring[j] != -1) {
+                        continue;
+                    }
+                    for (int to : graph[j]) {
+                        if (colouring[to] != -1 || spoiled[to]) {
+                            continue;
+                        }
+                        st_s.erase({-cnt_neigh_to_s[to], to});
+                        ++cnt_neigh_to_s[to];
+                        st_s.insert({-cnt_neigh_to_s[to], to});
+                    }
+                }
+
+                while (!st_s.empty()) {
+                    int candidate = st_s.begin()->second;
+                    if (colouring[candidate] == -1 && !spoiled[candidate]) {
+                        break;
+                    }
+                    st_s.erase(st_s.begin());
+                }
+
+                int next_v = -1;
+                if (!st_s.empty()) {
+                    next_v = st_s.begin()->second;
+                    st_s.erase(st_s.begin());
+                } else {
+                    for (const auto& [neg_degree, candidate] : st) {
+                        (void)neg_degree;
+                        if (colouring[candidate] == -1 && !spoiled[candidate]) {
+                            next_v = candidate;
+                            break;
+                        }
+                    }
+                }
+
+                if (next_v != -1) {
+                    v = next_v;
+                    st.erase({-cnt_neigh[v], v});
+                    colouring[v] = cnt_colors - 1;
+                    changed = true;
+                }
+            }
+        }
+
+        vector<int> remap(n, -1);
+        int next_color = 0;
+        for (int v = 0; v < n; ++v) {
+            if (remap[colouring[v]] == -1) {
+                remap[colouring[v]] = next_color++;
+            }
+            colouring[v] = remap[colouring[v]];
+        }
+        return colouring;
+
+Here are results of the previous iteration:
+
+=== Last iteration result ===
+PAR-2: 18586.3061852
+Colors: 448
+Time: 5340.726185199999
+Timed out: 0
+
+--- uvertex_function ---
+Title: Minimum domain then maximum degree for UVERTEX
+Reason: Selecting vertices with smallest domain (most constrained) and among those highest degree (most constraining) focuses search on hard subproblems, reducing branching.
+Code:
+int best_domain = numeric_limits<int>::max();
+int best_degree = -1;
+vector<int> candidates;
+for (int v = 0; v < n; ++v) {
+    if (in_C[v]) continue;
+    int dom = domain_size[v];
+    int deg = degree[v];
+    if (dom < best_domain || (dom == best_domain && deg > best_degree)) {
+        best_domain = dom;
+        best_degree = deg;
+        candidates.clear();
+        candidates.push_back(v);
+    } else if (dom == best_domain && deg == best_degree) {
+        candidates.push_back(v);
+    }
+}
+if (candidates.empty()) {
+    for (int v = 0; v < n; ++v) {
+        if (!in_C[v]) candidates.push_back(v);
+    }
+}
+uniform_int_distribution<int> dist(0, static_cast<int>(candidates.size()) - 1);
+return candidates[dist(rng)];
+
+--- cvertex_function ---
+Title: Max domain then min available colors for CVERTEX
+Reason: Uncoloring vertices with large domain but few available colors (bad count) helps to break deadlocks more effectively, as they are more constrained.
+Code:
+int best_domain = -1;
+int best_bad = numeric_limits<int>::max();
+vector<int> candidates;
+for (int v = 0; v < n; ++v) {
+    if (!in_C[v]) continue;
+    int dom = domain_size[v];
+    int b = 0;
+    for (int c = 0; c < k; ++c) {
+        if (forbidden[v][c] == 0 && bad(v, c) == 0) b++;
+    }
+    if (dom > best_domain || (dom == best_domain && b < best_bad)) {
+        best_domain = dom;
+        best_bad = b;
+        candidates.clear();
+        candidates.push_back(v);
+    } else if (dom == best_domain && b == best_bad) {
+        candidates.push_back(v);
+    }
+}
+uniform_int_distribution<int> dist(0, static_cast<int>(candidates.size()) - 1);
+return candidates[dist(rng)];
+
+--- colour_function ---
+Title: Impact-based color selection
+Reason: Choosing a color that minimizes the number of neighbors that become singleton or have reduced domain reduces future conflicts and dead ends.
+Code:
+if (D.empty()) return -1;
+int remembered_color = remembered[u];
+// Prefer the remembered color if it is available and not causing immediate conflict
+for (int c : D) {
+    if (c == remembered_color) {
+        return c;
+    }
+}
+// Otherwise, pick a color that minimizes the number of neighbors that would become singleton
+int best_c = D[0];
+int best_impact = numeric_limits<int>::max();
+for (int c : D) {
+    int impact = 0;
+    for (int to : graph[u]) {
+        if (!in_C[to] && forbidden[to][c] == 0) {
+            // if we assign c to u, neighbor to loses that color
+            if (domain_size[to] == 1) impact += 10; // heavy penalty for making neighbor singleton
+            else if (domain_size[to] == 2) impact += 1;
+        }
+    }
+    if (impact < best_impact) {
+        best_impact = impact;
+        best_c = c;
+    }
+}
+return best_c;
+
+--- greedy_initial_solution ---
+Title: Simple greedy by degree
+Reason: A straightforward greedy that colors vertices in decreasing degree order, using the smallest available color. This is fast and often provides a good initial solution.
+Code:
+int n = graph.size();
+vector<int> color(n, -1);
+vector<int> order(n);
+iota(order.begin(), order.end(), 0);
+sort(order.begin(), order.end(), [&](int a, int b) {
+    return graph[a].size() > graph[b].size();
+});
+vector<bool> used(n, false);
+for (int v : order) {
+    fill(used.begin(), used.end(), false);
+    for (int to : graph[v]) {
+        if (color[to] != -1) used[color[to]] = true;
+    }
+    int c = 0;
+    while (c < n && used[c]) ++c;
+    color[v] = c;
+}
+return color;
+
+Your code must be wrapped as:
+// start
+<your implementation>
+// end
+
+Tips:
+1) Write valid C++ (no pseudocode, no markdown fences inside the code).
+2) Before finalizing, perform a strict C++ syntax self-check: balanced braces/parentheses, semicolons, valid declarations.
+3) Your code must differ from the baseline.
+4) You must not be afraid of trying novel ideas for heuristics. Check that the code you providing is compilable, all variables are defined and there are no typos.
+5) If your previous code contains errors, try fix them.
+6) In field reason try to elaborate on ideas which have led you to the new implementation
+7) Beware of already declared variables and not yet declared variables. Your solution must be compilable
+8) Check that you properly use all of your newly declared variables
+
+# Code of the FCNS graph colouring solver:
+
+Key parameters of the solver are:
+    
+int n;                                      // number of vertices
+int m;                                      // number of edges
+int k;                                      // target number of colours: solver tries to colour the graph in not greater than k colours
+vector<vector<int>> graph;                  // graph (0-indexed) given as an adjancy list
+vector<int> degree;                         // degree[i] is a degree of i-th vertex
+vector<vector<unsigned short>> forbidden;   // forbidden[i][c] - number of neighbours of vertex i, which forbid the vertex i to have colour c
+vector<int> domain_size;                    // domain size of every vertex - the number of colours, which are allowed to have for particular vertex
+vector<int> colouring;                      // colour of every vertex
+vector<int> remembered;                     // the last colour used for each vertex
+vector<char> in_C;                          // in_C[i] == 1 if vertex i is currently coloured, and in_C[i] == 0, otherwise
+vector<int> bad_count;                      // bad_count[i * k + c] is the number of neighbors of i which are currently forced to color c
+mt19937_64 rng;                             // random number generator
+bool colour_prefers_different = true;       // if true, first tries to pick a color different from the remembered one
+
+Key code of the solver is:
+
+int Solver::singleton_color(int v) const {
+    if (domain_size[v] != 1) {
+        return -1;
+    }
+    for (int c = 0; c < k; ++c) {
+        if (forbidden[v][c] == 0) {
+            return c;
+        }
+    }
+    return -1;
+}
+
+int Solver::bad(int v, int c) const {
+    return bad_count[v * k + c];
+}
+
+void Solver::add_blocking(int v, int old_single, int new_single) {
+    if (old_single == new_single) {
+        return;
+    }
+    if (old_single != -1) {
+        for (int to : graph[v]) {
+            --bad_count[to * k + old_single];
+        }
+    }
+    if (new_single != -1) {
+        for (int to : graph[v]) {
+            ++bad_count[to * k + new_single];
+        }
+    }
+}
+
+int Solver::U_size() const {
+    int cnt = 0;
+    for (char is_in_C : in_C) {
+        if (!is_in_C) {
+            ++cnt;
+        }
+    }
+    return cnt;
+}
+
+int Solver::C_size() const {
+    return n - U_size();
+}
+
+void Solver::uncolour_vertex_and_update_domains(int v) {
+    int c = colouring[v];
+    in_C[v] = 0;
+    colouring[v] = -1;
+    int single = singleton_color(v);
+    if (single != -1) {
+        add_blocking(v, -1, single);
+    }
+    for (int to : graph[v]) {
+        int old_domain = domain_size[to];
+        int old_single = -1;
+        if (!in_C[to] && old_domain == 1) {
+            old_single = singleton_color(to);
+        }
+        if (forbidden[to][c] > 0) {
+            if (forbidden[to][c] == 1) {
+                ++domain_size[to];
+            }
+            --forbidden[to][c];
+        }
+        int new_domain = domain_size[to];
+        int new_single = -1;
+        if (!in_C[to] && new_domain == 1) {
+            new_single = singleton_color(to);
+        }
+        if (!in_C[to]) {
+            add_blocking(to, old_single, new_single);
+        }
+    }
+}
+
+void Solver::colour_vertex_and_update_domains(int v, int c) {
+    if (!in_C[v]) {
+        int old_single = singleton_color(v);
+        if (old_single != -1) {
+            add_blocking(v, old_single, -1);
+        }
+    }
+    in_C[v] = 1;
+    colouring[v] = c;
+    remembered[v] = c;
+    for (int to : graph[v]) {
+        int old_domain = domain_size[to];
+        int old_single = -1;
+        if (!in_C[to] && old_domain == 1) {
+            old_single = singleton_color(to);
+        }
+        if (forbidden[to][c] == 0) {
+            --domain_size[to];
+        }
+        ++forbidden[to][c];
+        int new_domain = domain_size[to];
+        int new_single = -1;
+        if (!in_C[to] && new_domain == 1) {
+            new_single = singleton_color(to);
+        }
+        if (!in_C[to]) {
+            add_blocking(to, old_single, new_single);
+        }
+    }
+}
+
+int Solver::uncolored_degree(int v) const {
+    int result = 0;
+    for (int to : graph[v]) {
+        if (!in_C[to]) {
+            ++result;
+        }
+    }
+    return result;
+}
+
+int Solver::UVERTEX() {
+    vector<int> candidates;
+    vector<int> fallback;
+    for (int v = 0; v < n; ++v) {
+        if (in_C[v]) {
+            continue;
+        }
+        fallback.push_back(v);
+        if (domain_size[v] > 1) {
+            candidates.push_back(v);
+        }
+    }
+    const vector<int>& pool = candidates.empty() ? fallback : candidates;
+    uniform_int_distribution<int> dist(0, static_cast<int>(pool.size()) - 1);
+    return pool[dist(rng)];
+}
+
+int Solver::CVERTEX() {
+    int best_domain = -1;
+    int best_degree = numeric_limits<int>::max();
+    vector<int> candidates;
+    for (int v = 0; v < n; ++v) {
+        if (!in_C[v]) {
+            continue;
+        }
+        if (domain_size[v] > best_domain) {
+            best_domain = domain_size[v];
+            best_degree = degree[v];
+            candidates.clear();
+            candidates.push_back(v);
+        } else if (domain_size[v] == best_domain) {
+            if (degree[v] < best_degree) {
+                best_degree = degree[v];
+                candidates.clear();
+                candidates.push_back(v);
+            } else if (degree[v] == best_degree) {
+                candidates.push_back(v);
+            }
+        }
+    }
+    uniform_int_distribution<int> dist(0, static_cast<int>(candidates.size()) - 1);
+    return candidates[dist(rng)];
+}
+
+vector<int> Solver::build_D(int u) const {
+    vector<int> result;
+    for (int c = 0; c < k; ++c) {
+        if (forbidden[u][c] == 0 && bad(u, c) == 0) {
+            result.push_back(c);
+        }
+    }
+    return result;
+}
+
+int Solver::COLOUR(int u, const vector<int>& D) {
+    if (D.empty()) {
+        return -1;
+    }
+    vector<int> shuffled = D;
+    shuffle(shuffled.begin(), shuffled.end(), rng);
+    int remembered_color = remembered[u];
+    if (colour_prefers_different) {
+        for (int c : shuffled) {
+            if (c != remembered_color) {
+                colour_prefers_different = false;
+                return c;
+            }
+        }
+        return shuffled.front();
+    }
+    for (int c : shuffled) {
+        if (c == remembered_color) {
+            return c;
+        }
+    }
+    return shuffled.front();
+}
+
+pair<int, vector<int>> Solver::FCNS(int B, int max_steps) { // B stands for maximum number of vertices, which is being uncoloured
+    int steps = 0;
+    while (steps < max_steps) {
+        if (U_size() == 0) {
+            break;
+        }
+        int u = UVERTEX();
+        if (u < 0) {
+            break;
+        }
+        vector<int> D = build_D(u);
+        if (!D.empty()) {
+            int c = COLOUR(u, D);
+            colour_vertex_and_update_domains(u, c);
+        } else {
+            int limit = min(B, C_size());
+            for (int i = 0; i < limit; ++i) {
+                int c_vertex = CVERTEX();
+                if (c_vertex < 0) {
+                    break;
+                }
+                uncolour_vertex_and_update_domains(c_vertex);
+                colour_prefers_different = true;
+            }
+        }
+        ++steps;
+    }
+    vector<int> result = colouring;
+    int used_colors = 0;
+    vector<int> remap(k, -1);
+    for (int v = 0; v < n; ++v) {
+        if (result[v] < 0) {
+            continue;
+        }
+        if (remap[result[v]] == -1) {
+            remap[result[v]] = used_colors++;
+        }
+        result[v] = remap[result[v]];
+    }
+    return {used_colors, result};
+}
+
+Auxiliary functions are:
+
+vector<int> greedy_coloring(const vector<vector<int>>& graph) {  // RLF greedy solution, do not be afraid to totally change it!
+    int n = static_cast<int>(graph.size());
+    vector<int> color(n, -1);
+    set<pair<int, int>> st;
+    vector<int> cnt_neigh(n);
+
+    for (int i = 0; i < n; ++i) {
+        cnt_neigh[i] = static_cast<int>(graph[i].size());
+        st.insert({-cnt_neigh[i], i});
+    }
+
+    int cnt_colors = 0;
+    while (!st.empty()) {
+        int v = st.begin()->second;
+        st.erase(st.begin());
+        color[v] = cnt_colors++;
+
+        bool changed = true;
+        vector<int> cnt_neigh_to_s(n, 0);
+        set<pair<int, int>> st_s;
+        vector<char> spoiled(n, 0);
+
+        while (changed) {
+            changed = false;
+
+            for (int j : graph[v]) {
+                if (color[j] != -1) {
+                    continue;
+                }
+                spoiled[j] = 1;
+                st.erase({-cnt_neigh[j], j});
+                --cnt_neigh[j];
+                st.insert({-cnt_neigh[j], j});
+            }
+
+            for (int j : graph[v]) {
+                if (color[j] != -1) {
+                    continue;
+                }
+                for (int to : graph[j]) {
+                    if (color[to] != -1 || spoiled[to]) {
+                        continue;
+                    }
+                    st_s.erase({-cnt_neigh_to_s[to], to});
+                    ++cnt_neigh_to_s[to];
+                    st_s.insert({-cnt_neigh_to_s[to], to});
+                }
+            }
+
+            while (!st_s.empty()) {
+                int candidate = st_s.begin()->second;
+                if (color[candidate] == -1 && !spoiled[candidate]) {
+                    break;
+                }
+                st_s.erase(st_s.begin());
+            }
+
+            int next_v = -1;
+            if (!st_s.empty()) {
+                next_v = st_s.begin()->second;
+                st_s.erase(st_s.begin());
+            } else {
+                for (const auto& [neg_degree, candidate] : st) {
+                    (void)neg_degree;
+                    if (color[candidate] == -1 && !spoiled[candidate]) {
+                        next_v = candidate;
+                        break;
+                    }
+                }
+            }
+
+            if (next_v != -1) {
+                v = next_v;
+                st.erase({-cnt_neigh[v], v});
+                color[v] = cnt_colors - 1;
+                changed = true;
+            }
+        }
+    }
+
+    vector<int> remap(n, -1);
+    int next_color = 0;
+    for (int v = 0; v < n; ++v) {
+        if (remap[color[v]] == -1) {
+            remap[color[v]] = next_color++;
+        }
+        color[v] = remap[color[v]];
+    }
+    return color;
+}
+
+int count_used_colors(const vector<int>& colors) {
+    int used = 0;
+    for (int c : colors) {
+        used = max(used, c + 1);
+    }
+    return used;
+}
+
+vector<int> make_best_coloring(const vector<vector<int>>& graph) {
+    int n = static_cast<int>(graph.size());
+    vector<int> best = greedy_coloring(graph);
+    int best_colors = count_used_colors(best);
+
+    uint64_t base_seed = static_cast<uint64_t>(chrono::high_resolution_clock::now().time_since_epoch().count());
+    vector<int> b_values = {1, 2, 4, 6, 8, 15, 25, 40};
+    sort(b_values.begin(), b_values.end());
+    b_values.erase(unique(b_values.begin(), b_values.end()), b_values.end());
+
+    int attempts = 200;
+    int target_k = best_colors - 1;
+    for (int attempt = 0; attempt < attempts && target_k >= 1; ++attempt) {
+        int b = b_values[attempt % static_cast<int>(b_values.size())];
+        int max_steps = 1000 * n;
+        uint64_t seed = base_seed + static_cast<uint64_t>(attempt) * 0x9e3779b97f4a7c15ULL;
+        Solver solver(n, 0, graph, target_k, seed);
+        auto [used_colors, colors] = solver.FCNS(b, max_steps);
+        if (static_cast<int>(colors.size()) != n) {
+            // it means that the solver failed to color all vertices, so we skip this attempt
+            continue;
+        }
+
+        bool complete = true;
+        for (int v = 0; v < n; ++v) {
+            if (colors[v] < 0) {
+                complete = false;
+                // it means that the solver failed to color all vertices, so we skip this attempt
+                break;
+            }
+        }
+        if (!complete) {
+            continue;
+        }
+        --target_k;
+        if (used_colors < best_colors) {
+            best = std::move(colors);
+            best_colors = used_colors;
+        }
+    }
+
+    return best;
+}
+
+Return a valid JSON object with this structure:
+{
+  "implementations": [
+    {{"task": "<name>", "code": "<code>", "title": "<title>", "reason": "<reason>"}},
+    ...
+  ]
+}
+Include one entry for each of: "uvertex_function", "cvertex_function", "colour_function", "greedy_initial_solution".
+All fields in each entry are required. If you have no improvement for a task, still include it with the baseline code.

@@ -1,0 +1,12 @@
+{
+  "compile_ok": true,
+  "score": [
+    448,
+    18605.7708293
+  ],
+  "all_ok": false,
+  "total_colors": 448,
+  "total_time": 5242.2428293,
+  "timed_out": 0,
+  "par2": 18605.7708293
+}

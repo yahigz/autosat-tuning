@@ -1,13 +1,14 @@
 # FCNS tuning configuration
 
-iteration_num: 20
+iteration_num: 60
 data_parallel_size: 7
+batch_size: 1
 task_selection_mode: all
 rand_seed: 42
 
 llm_model: "deepseek-ai/DeepSeek-V4-Flash"
 use_structured: true
-temperature: 0.7
+temperature: 0.8
 
 baseline_cpp: "./solver/baseline/fcns.cpp"
 template_cpp: "./solver/template/fcns.cpp"

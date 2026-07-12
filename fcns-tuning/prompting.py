@@ -34,9 +34,9 @@ DEFAULT_HEURISTIC_MODULES = {
     },
     "greedy_initial_solution": {
         "label": "Greedy initial solution",
-        "description": "Construct an initial solution for the graph coloring problem using a greedy approach. It allows to approximate the solution quickly, which can be used as a starting point for the FCNS search. The output should contain a vector of colors assigned to each vertex in the graph (both 0-indexed). Do not be afraid to try for this function to return a totally novel solution.",
-        "insertion_format": "Replace the full body of greedy_coloring(const vector<vector<int>>& graph).",
-        "signature": "vector<int> greedy_coloring(const vector<vector<int>>& graph)",
+        "description": "Construct an initial solution for the graph coloring problem using a greedy approach. It allows to approximate the solution quickly, which can be used as a starting point for the FCNS search. The output should contain a vector of colors assigned to each vertex in the graph (both 0-indexed). Do not be afraid to try a totally novel solution here, it is important to check completely different approaches.",
+        "insertion_format": "Replace the full body of Solver::greedy_coloring(const vector<vector<int>>& graph).",
+        "signature": "vector<int> Solver::greedy_coloring(const vector<vector<int>>& graph)",
     },
 }
 

@@ -1,0 +1,157 @@
+{
+  "name": "gc_500_9",
+  "final_colors": 143,
+  "final_time": 2255.89,
+  "trace": [
+    {
+      "colors": 160,
+      "time": 0.0696493,
+      "elapsed": 0.0696493,
+      "raw": "{\"colors\": 160, \"time\": 0.0696493}",
+      "captured_at": 1783828563.8114548
+    },
+    {
+      "colors": 159,
+      "time": 0.566747,
+      "elapsed": 0.566747,
+      "raw": "{\"colors\": 159, \"time\": 0.566747}",
+      "captured_at": 1783828564.3085525
+    },
+    {
+      "colors": 158,
+      "time": 0.61151,
+      "elapsed": 0.61151,
+      "raw": "{\"colors\": 158, \"time\": 0.61151}",
+      "captured_at": 1783828564.3533156
+    },
+    {
+      "colors": 157,
+      "time": 0.687468,
+      "elapsed": 0.687468,
+      "raw": "{\"colors\": 157, \"time\": 0.687468}",
+      "captured_at": 1783828564.4292736
+    },
+    {
+      "colors": 156,
+      "time": 0.764512,
+      "elapsed": 0.764512,
+      "raw": "{\"colors\": 156, \"time\": 0.764512}",
+      "captured_at": 1783828564.5063176
+    },
+    {
+      "colors": 155,
+      "time": 0.8266,
+      "elapsed": 0.8266,
+      "raw": "{\"colors\": 155, \"time\": 0.8266}",
+      "captured_at": 1783828564.5684056
+    },
+    {
+      "colors": 154,
+      "time": 0.910859,
+      "elapsed": 0.910859,
+      "raw": "{\"colors\": 154, \"time\": 0.910859}",
+      "captured_at": 1783828564.6526647
+    },
+    {
+      "colors": 153,
+      "time": 0.965791,
+      "elapsed": 0.965791,
+      "raw": "{\"colors\": 153, \"time\": 0.965791}",
+      "captured_at": 1783828564.7075965
+    },
+    {
+      "colors": 152,
+      "time": 1.05922,
+      "elapsed": 1.05922,
+      "raw": "{\"colors\": 152, \"time\": 1.05922}",
+      "captured_at": 1783828564.8010256
+    },
+    {
+      "colors": 151,
+      "time": 1.17736,
+      "elapsed": 1.17736,
+      "raw": "{\"colors\": 151, \"time\": 1.17736}",
+      "captured_at": 1783828564.9191656
+    },
+    {
+      "colors": 150,
+      "time": 1.59704,
+      "elapsed": 1.59704,
+      "raw": "{\"colors\": 150, \"time\": 1.59704}",
+      "captured_at": 1783828565.3388455
+    },
+    {
+      "colors": 149,
+      "time": 2.36739,
+      "elapsed": 2.36739,
+      "raw": "{\"colors\": 149, \"time\": 2.36739}",
+      "captured_at": 1783828566.1091955
+    },
+    {
+      "colors": 148,
+      "time": 2.5319,
+      "elapsed": 2.5319,
+      "raw": "{\"colors\": 148, \"time\": 2.5319}",
+      "captured_at": 1783828566.2737055
+    },
+    {
+      "colors": 147,
+      "time": 3.44733,
+      "elapsed": 3.44733,
+      "raw": "{\"colors\": 147, \"time\": 3.44733}",
+      "captured_at": 1783828567.1891356
+    },
+    {
+      "colors": 146,
+      "time": 3.70888,
+      "elapsed": 3.70888,
+      "raw": "{\"colors\": 146, \"time\": 3.70888}",
+      "captured_at": 1783828567.4506855
+    },
+    {
+      "colors": 145,
+      "time": 6.06503,
+      "elapsed": 6.06503,
+      "raw": "{\"colors\": 145, \"time\": 6.06503}",
+      "captured_at": 1783828569.8068357
+    },
+    {
+      "colors": 144,
+      "time": 191.044,
+      "elapsed": 191.044,
+      "raw": "{\"colors\": 144, \"time\": 191.044}",
+      "captured_at": 1783828754.7858055
+    },
+    {
+      "colors": 143,
+      "time": 2255.89,
+      "elapsed": 2255.89,
+      "raw": "{\"colors\": 143, \"time\": 2255.89}",
+      "captured_at": 1783830819.6318057
+    }
+  ],
+  "stdout": "",
+  "stderr": [
+    "{\"colors\": 160, \"time\": 0.0696493}\n",
+    "{\"colors\": 159, \"time\": 0.566747}\n",
+    "{\"colors\": 158, \"time\": 0.61151}\n",
+    "{\"colors\": 157, \"time\": 0.687468}\n",
+    "{\"colors\": 156, \"time\": 0.764512}\n",
+    "{\"colors\": 155, \"time\": 0.8266}\n",
+    "{\"colors\": 154, \"time\": 0.910859}\n",
+    "{\"colors\": 153, \"time\": 0.965791}\n",
+    "{\"colors\": 152, \"time\": 1.05922}\n",
+    "{\"colors\": 151, \"time\": 1.17736}\n",
+    "{\"colors\": 150, \"time\": 1.59704}\n",
+    "{\"colors\": 149, \"time\": 2.36739}\n",
+    "{\"colors\": 148, \"time\": 2.5319}\n",
+    "{\"colors\": 147, \"time\": 3.44733}\n",
+    "{\"colors\": 146, \"time\": 3.70888}\n",
+    "{\"colors\": 145, \"time\": 6.06503}\n",
+    "{\"colors\": 144, \"time\": 191.044}\n",
+    "{\"colors\": 143, \"time\": 2255.89}\n"
+  ],
+  "exit_code": -9,
+  "timed_out": true,
+  "par2": 6000.0
+}

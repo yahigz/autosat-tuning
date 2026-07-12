@@ -64,6 +64,8 @@ class InstanceRun:
     name: str
     final_colors: int
     final_time: float
+    par2: float
+    timed_out: bools
     trace: list[dict[str, Any]]
     stdout: str
     stderr: list[str]
@@ -380,6 +382,7 @@ def _run_solver(executable_path: Path, instance: GraphInstance, timeout_s: float
         stderr=stderr_lines,
         exit_code=proc.returncode or 0,
         timed_out=timed_out,
+        par2=2 * timeout_s if timed_out else final_time
     )
 
 
@@ -404,18 +407,24 @@ def _evaluate_source(
     total_colors = 0
     total_time = 0.0
     all_ok = True
+    timed_out = 0
+    par2 = 0.0
     for run in runs:
         total_colors += int(run.final_colors)
         total_time += float(run.final_time)
         all_ok = all_ok and (not run.timed_out) and run.exit_code == 0
+        timed_out += 1 if run.timed_out and run.exit_code == 0 else 0
+        par2 += 2 * timeout_s if run.timed_out else float(run.final_time)
 
     return (
         {
             "compile_ok": True,
-            "score": [total_colors, total_time],
+            "score": [total_colors, par2],
             "all_ok": all_ok,
             "total_colors": total_colors,
             "total_time": total_time,
+            "timed_out": timed_out,
+            "par2": par2,
         },
         runs,
     )
@@ -471,8 +480,8 @@ def _query_llm_all(prompt_file: Path, args: argparse.Namespace, task_names: Sequ
 
 
 def _select_better(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
-    left_key = (float(left.get("total_colors", float("inf"))), float(left.get("total_time", float("inf"))))
-    right_key = (float(right.get("total_colors", float("inf"))), float(right.get("total_time", float("inf"))))
+    left_key = (left.get("timed_out", 0), float(left.get("total_colors", float("inf"))), float(left.get("total_time", float("inf"))))
+    right_key = (right.get("timed_out", 0), float(right.get("total_colors", float("inf"))), float(right.get("total_time", float("inf"))))
     return right_key < left_key
 
 
@@ -503,6 +512,8 @@ def _baseline_result(
             "final_colors": run.final_colors,
             "final_time": run.final_time,
             "trace": run.trace,
+            "timed_out": run.timed_out,
+            "par2": run.par2
         }
         for run in runs
     ], scale, run_label=str(getattr(args, "run_id", "")))
@@ -518,8 +529,8 @@ def _progress_payload(
 ) -> dict[str, Any]:
     return {
         "run_id": run_id,
-        "metric_mode": "colors_time",
-        "metric_labels": {"primary": "colors", "secondary": "time"},
+        "metric_mode": "colors_par2",
+        "metric_labels": {"primary": "colors", "secondary": "par2"},
         "baseline": baseline_summary,
         "best": best_state,
         "iterations": list(iterations_log),
@@ -551,6 +562,7 @@ def _save_candidate_artifacts(
                 "stderr": run.stderr,
                 "exit_code": run.exit_code,
                 "timed_out": run.timed_out,
+                "par2": run.par2,
             },
         )
 
@@ -571,6 +583,7 @@ def _iter_prompt_context(
     payload: Mapping[str, Any],
     rendered_source: str,
     all_tasks_mode: bool,
+    summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if all_tasks_mode:
         implementations: list[dict[str, Any]] = []
@@ -584,8 +597,8 @@ def _iter_prompt_context(
                     "reason": str(item.get("reason", "") or ""),
                 }
             )
-        return {"implementations": implementations}
-
+        return {"implementations": implementations, "colors": summary.get("total_colors") if summary else None, "par2": summary.get("par2") if summary else None, "timed_out": summary.get("timed_out") if summary else None, "time": summary.get("total_time") if summary else None}
+    
     return {
         "code": str(payload.get("code", "") or ""),
         "title": str(payload.get("title", "") or ""),
@@ -657,7 +670,7 @@ def main(args: argparse.Namespace) -> None:
     data_parallel_size = int(config_payload.get("data_parallel_size", getattr(args, "data_parallel_size", 1)) or 1)
     eval_parallel_size = int(config_payload.get("eval_parallel_size", getattr(args, "eval_parallel_size", 1)) or 1)
     iteration_num = int(config_payload.get("iteration_num", getattr(args, "iteration_num", 10)) or 10)
-    batch_size = int(config_payload.get("batch_size", getattr(args, "batch_size", 4)) or 4)
+    batch_size = int(config_payload.get("batch_size", getattr(args, "batch_size", 1)) or 1)
     selection_mode = str(config_payload.get("task_selection_mode", getattr(args, "task_selection_mode", "all")) or "all")
     rand_seed = int(config_payload.get("rand_seed", getattr(args, "rand_seed", 42)) or 42)
     structured_output = bool(config_payload.get("use_structured", getattr(args, "use_structured", True)))
@@ -721,6 +734,8 @@ def main(args: argparse.Namespace) -> None:
                 "name": run.name,
                 "final_colors": run.final_colors,
                 "final_time": run.final_time,
+                "final_timed_out": run.timed_out,
+                "final_par2": run.par2,
                 "trace": run.trace,
             }
             for run in baseline_runs
@@ -772,6 +787,8 @@ def main(args: argparse.Namespace) -> None:
             baseline_info={
                 "colors": best_state["summary"].get("total_colors"),
                 "time": best_state["summary"].get("total_time"),
+                "timed_out": best_state["summary"].get("timed_out"),
+                "par2": best_state["summary"].get("par2"),
             },
             last_iter_result=last_iter_result,
             structured_output=structured_output,
@@ -823,6 +840,8 @@ def main(args: argparse.Namespace) -> None:
                         "final_colors": run.final_colors,
                         "final_time": run.final_time,
                         "trace": run.trace,
+                        "final_timed_out": run.timed_out,
+                        "final_par2": run.par2,
                     }
                     for run in runs
                 ],
@@ -856,6 +875,7 @@ def main(args: argparse.Namespace) -> None:
                     best_candidate["payload"],
                     best_candidate["rendered_source"],
                     all_tasks_mode,
+                    best_candidate["summary"],
                 ),
             }
         )

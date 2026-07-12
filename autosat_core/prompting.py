@@ -203,6 +203,15 @@ def _format_last_iter_section(last_iter: Mapping[str, Any]) -> str:
     par2 = last_iter.get("par2")
     if par2 is not None:
         lines.append(f"PAR-2: {par2}")
+    colors = last_iter.get("colors")
+    if colors is not None:
+        lines.append(f"Colors: {colors}")
+    time = last_iter.get("time")
+    if time is not None:
+        lines.append(f"Time: {time}")
+    timed_out = last_iter.get("timed_out")
+    if timed_out is not None:
+        lines.append(f"Timed out: {timed_out}")
 
     impls = last_iter.get("implementations")
     if impls:

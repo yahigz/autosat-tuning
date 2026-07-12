@@ -1,14 +1,10 @@
-You are a graph colouring solver researcher. Optimize the heuristic parameters of a C++ Forward-Checking Neighbourhood Search (FCNS) graph colouring solver.
+You are a graph colouring solver researcher. Optimize the heuristic parameters of a C++ Forward-Checking Neighbourhood Search (FCNS) graph colouring solver. The target parameter is a number of coloUrs.
 
 {{ heuristics_section }}
 
 Here are the baseline results:
 
 {{ baseline_section }}
-
-Here are results of the previous iteration:
-
-{{ last_iter_section }}
 
 Your code must be wrapped as:
 // start
@@ -21,8 +17,9 @@ Tips:
 3) Your code must differ from the baseline.
 4) You must not be afraid of trying novel ideas for heuristics. Check that the code you providing is compilable, all variables are defined and there are no typos.
 5) If your previous code contains errors, try fix them.
-6) Try to indicate in the field "reason" if you're developing idea of the previous iteration. Also it's preferred to store in "reason" some general knowledge, that you can extract from the results of the previous iteration and  keep the knowledge which was extracted before.
-7) If you decided to take an absolutely new approach, mention why.
+6) In field reason try to elaborate on ideas which have led you to the new implementation
+7) Beware of already declared variables and not yet declared variables. Your solution must be compilable
+8) Check that you properly use all of your newly declared variables
 
 # Code of the FCNS graph colouring solver:
 
