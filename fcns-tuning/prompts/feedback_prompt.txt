@@ -25,6 +25,8 @@ The function signature must be exactly:
       # return: dict of NUMERICAL statistics (all values must be int or float)
 Return empty string in `exploration_code` if you have no new statistics to propose.
 
+HERE YOU NEED TO PROVIDE ONLY THE FUNCTION: NO EXTRA TEXT, JUST PYTHON CODE.
+
 {% endif %}
 Your code must be wrapped as:
 // start
@@ -38,8 +40,8 @@ Tips:
 4) You must not be afraid of trying novel ideas for heuristics. Check that the code you providing is compilable, all variables are defined and there are no typos.
 5) If your previous code contains errors, try fix them.
 6) In field reason try to elaborate on ideas which have led you to the new implementation
-7) Beware of already declared variables and not yet declared variables. Your solution must be compilable
-8) Check that you properly use all of your newly declared variables
+7) Check that all of your variables which are being used were declared before the use.
+8) Check that the code you've provided is compilable
 
 # Code of the FCNS graph colouring solver:
 
@@ -299,9 +301,8 @@ pair<int, vector<int>> Solver::FCNS(int B, int max_steps) { // B stands for maxi
     return {used_colors, result};
 }
 
-Auxiliary functions are:
 
-vector<int> greedy_coloring(const vector<vector<int>>& graph) {  // RLF greedy solution, do not be afraid to totally change it!
+vector<int> Solver::greedy_coloring(const vector<vector<int>>& graph) {  // RLF greedy solution, do not be afraid to totally change it!
     int n = static_cast<int>(graph.size());
     vector<int> color(n, -1);
     set<pair<int, int>> st;
@@ -392,6 +393,8 @@ vector<int> greedy_coloring(const vector<vector<int>>& graph) {  // RLF greedy s
     return color;
 }
 
+Auxiliary functions are:
+
 int count_used_colors(const vector<int>& colors) {
     int used = 0;
     for (int c : colors) {
@@ -400,7 +403,7 @@ int count_used_colors(const vector<int>& colors) {
     return used;
 }
 
-vector<int> make_best_coloring(const vector<vector<int>>& graph) {
+vector<int> make_best_coloring(const vector<vector<int>>& graph) { // it is the main function, where FCNS is used, check its logic. it might be useful
     int n = static_cast<int>(graph.size());
     vector<int> best = greedy_coloring(graph);
     int best_colors = count_used_colors(best);
