@@ -21,19 +21,19 @@ DEFAULT_HEURISTIC_MODULES = {
         "label": "Uncoloured vertex choice",
         "description": "Select the next uncoloured vertex to colour during the search process.",
         "insertion_format": "Replace the full body of Solver::UVERTEX().",
-        "signature": "int Solver::UVERTEX()",
+        "signature": "int Solver::UVERTEX() const",
     },
     "cvertex_function": {
         "label": "Rollback vertex choice",
         "description": "Choose which colored vertices should be uncoloured when the solver needs to recover from a dead end. The number of vertices to uncolour is determined by parameter B, which is passed to the FCNS function.",
         "insertion_format": "Replace the full body of Solver::CVERTEX().",
-        "signature": "int Solver::CVERTEX()",
+        "signature": "int Solver::CVERTEX() const",
     },
     "colour_function": {
         "label": "Color selection policy",
         "description": "Choose the best available color for the selected vertex u from the legal domain D.",
         "insertion_format": "Replace the full body of Solver::COLOUR(int u, const vector<int>& D).",
-        "signature": "int Solver::COLOUR(int u, const vector<int>& D)",
+        "signature": "int Solver::COLOUR(int u, const vector<int>& D) const",
     },
     "greedy_initial_solution": {
         "label": "Greedy initial solution",

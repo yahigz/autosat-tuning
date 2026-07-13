@@ -27,7 +27,8 @@ Return empty string in `exploration_code` if you have no new statistics to propo
 
 HERE YOU NEED TO PROVIDE ONLY THE FUNCTION: NO EXTRA TEXT, JUST PYTHON CODE.
 
-The function will be run on each training graph. Results are aggregated and shown to you in future iterations to help you understand the data distribution. Don't be afraid to calculate stats with high cyclomatic complexity.
+The function will be run on each training sample. Results are aggregated and shown to you in future iterations to help you understand the data distribution. Don't be afraid to calculate stats with high cyclomatic complexity.
+I highly recommend to use it, it can give you some important context.
 
 {% endif %}
 Your code must be wrapped as:
@@ -49,19 +50,19 @@ Tips:
 
 Key parameters of the solver are:
     
-int n;                                      // number of vertices
-int m;                                      // number of edges
-int k;                                      // target number of colours: solver tries to colour the graph in not greater than k colours
-vector<vector<int>> graph;                  // graph (0-indexed) given as an adjancy list
-vector<int> degree;                         // degree[i] is a degree of i-th vertex
-vector<vector<unsigned short>> forbidden;   // forbidden[i][c] - number of neighbours of vertex i, which forbid the vertex i to have colour c
-vector<int> domain_size;                    // domain size of every vertex - the number of colours, which are allowed to have for particular vertex
-vector<int> colouring;                      // colour of every vertex
-vector<int> remembered;                     // the last colour used for each vertex
-vector<char> in_C;                          // in_C[i] == 1 if vertex i is currently coloured, and in_C[i] == 0, otherwise
-vector<int> bad_count;                      // bad_count[i * k + c] is the number of neighbors of i which are currently forced to color c
-mt19937_64 rng;                             // random number generator
-bool colour_prefers_different = true;       // if true, first tries to pick a color different from the remembered one
+int n;                                              // number of vertices
+int m;                                              // number of edges
+int k;                                              // target number of colours: solver tries to colour the graph in not greater than k colours
+vector<vector<int>> graph;                          // graph (0-indexed) given as an adjancy list
+vector<int> degree;                                 // degree[i] is a degree of i-th vertex
+vector<vector<unsigned short>> forbidden;           // forbidden[i][c] - number of neighbours of vertex i, which forbid the vertex i to have colour c
+vector<int> domain_size;                            // domain size of every vertex - the number of colours, which are allowed to have for particular vertex
+vector<int> colouring;                              // colour of every vertex
+vector<int> remembered;                             // the last colour used for each vertex
+vector<char> in_C;                                  // in_C[i] == 1 if vertex i is currently coloured, and in_C[i] == 0, otherwise
+vector<int> bad_count;                              // bad_count[i * k + c] is the number of neighbors of i which are currently forced to color c
+mutable mt19937_64 rng;                             // random number generator
+mutable bool colour_prefers_different = true;       // if true, first tries to pick a color different from the remembered one
 
 Key code of the solver is:
 
@@ -183,7 +184,7 @@ int Solver::uncolored_degree(int v) const {
     return result;
 }
 
-int Solver::UVERTEX() {
+int Solver::UVERTEX() const {
     vector<int> candidates;
     vector<int> fallback;
     for (int v = 0; v < n; ++v) {
@@ -200,7 +201,7 @@ int Solver::UVERTEX() {
     return pool[dist(rng)];
 }
 
-int Solver::CVERTEX() {
+int Solver::CVERTEX() const {
     int best_domain = -1;
     int best_degree = numeric_limits<int>::max();
     vector<int> candidates;
@@ -237,7 +238,7 @@ vector<int> Solver::build_D(int u) const {
     return result;
 }
 
-int Solver::COLOUR(int u, const vector<int>& D) {
+int Solver::COLOUR(int u, const vector<int>& D) const {
     if (D.empty()) {
         return -1;
     }

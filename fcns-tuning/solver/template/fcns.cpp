@@ -24,8 +24,8 @@ struct Solver {
     vector<int> remembered;
     vector<char> in_C;
     vector<int> bad_count;
-    mt19937_64 rng;
-    bool colour_prefers_different = true;
+    mutable mt19937_64 rng;
+    mutable bool colour_prefers_different = true;
 
     Solver(int n_, int m_, const vector<vector<int>>& graph_, int k_, uint64_t seed)
     : n(n_),
@@ -178,7 +178,7 @@ struct Solver {
         return result;
     }
 
-    int UVERTEX() {
+    int UVERTEX() const {
 int best_domain = numeric_limits<int>::max();
 int best_degree = -1;
 vector<int> candidates;
@@ -204,7 +204,7 @@ uniform_int_distribution<int> dist(0, static_cast<int>(candidates.size()) - 1);
 return candidates[dist(rng)];
     }
 
-    int CVERTEX() {
+    int CVERTEX() const {
 int best_domain = -1;
 int best_bad = numeric_limits<int>::max();
 vector<int> candidates;
@@ -238,7 +238,7 @@ return candidates[dist(rng)];
         return result;
     }
 
-    int COLOUR(int u, const vector<int>& D) {
+    int COLOUR(int u, const vector<int>& D) const {
 if (D.empty()) return -1;
 int remembered_color = remembered[u];
 // Prefer the remembered color if it is available and not causing immediate conflict

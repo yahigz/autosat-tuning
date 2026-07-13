@@ -24,8 +24,8 @@ struct Solver {
     vector<int> remembered;
     vector<char> in_C;
     vector<int> bad_count;
-    mt19937_64 rng;
-    bool colour_prefers_different = true;
+    mutable mt19937_64 rng;
+    mutable bool colour_prefers_different = true;
 
     Solver(int n_, int m_, const vector<vector<int>>& graph_, int k_, uint64_t seed)
     : n(n_),
@@ -178,7 +178,7 @@ struct Solver {
         return result;
     }
 
-    int UVERTEX() {
+    int UVERTEX() const {
         // <--uvertex_function-->
         vector<int> candidates;
         vector<int> fallback;
@@ -197,7 +197,7 @@ struct Solver {
         // <--uvertex_function-->
     }
 
-    int CVERTEX() {
+    int CVERTEX() const {
         // <--cvertex_function-->
         int best_domain = -1;
         int best_degree = numeric_limits<int>::max();
@@ -238,7 +238,7 @@ struct Solver {
         return result;
     }
 
-    int COLOUR(int u, const vector<int>& D) {
+    int COLOUR(int u, const vector<int>& D) const {
         // <--colour_function-->
         if (D.empty()) {
             return -1;
