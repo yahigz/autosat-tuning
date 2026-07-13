@@ -509,9 +509,10 @@ def _baseline_result(
     instances: Sequence[GraphInstance],
     scale: PlotScale,
     max_workers: int,
+    source_text: str | None = None,
 ) -> tuple[dict[str, Any], list[InstanceRun], dict[str, str]]:
     _log("Running baseline evaluation")
-    baseline_rendered = adapter.render_source({})
+    baseline_rendered = adapter.render_source({}, baseline_text=source_text)
     baseline_cpp = temp_root / "baseline" / "fcns.cpp"
     baseline_cpp.parent.mkdir(parents=True, exist_ok=True)
     baseline_cpp.write_text(baseline_rendered, encoding="utf-8")
@@ -886,7 +887,12 @@ def main(args: argparse.Namespace) -> None:
     else:
         checkpoint = None
 
-    baseline_text = adapter.baseline_text()
+    # Initialize template with baseline code (markers preserved) if not already present.
+    if not TEMPLATE_CPP.exists() or not any(f"<--{n}-->" in TEMPLATE_CPP.read_text(encoding="utf-8") for n in task_names):
+        TEMPLATE_CPP.parent.mkdir(parents=True, exist_ok=True)
+        TEMPLATE_CPP.write_text(adapter.render_source({}, keep_markers=True), encoding="utf-8")
+
+    baseline_text = TEMPLATE_CPP.read_text(encoding="utf-8")
     baseline_codes = {name: adapter.extract_baseline_section(name, baseline_text=baseline_text) for name in task_names}
 
     baseline_summary, baseline_runs, baseline_state = _baseline_result(
@@ -900,6 +906,7 @@ def main(args: argparse.Namespace) -> None:
         instances=train_instances,
         scale=scale,
         max_workers=data_parallel_size,
+        source_text=baseline_text,
     )
 
     _baseline_trace_runs = [
@@ -1017,12 +1024,14 @@ def main(args: argparse.Namespace) -> None:
         best_runs: list[InstanceRun] = []
         best_rendered = best_state["rendered_source"]
 
+        _template_base = TEMPLATE_CPP.read_text(encoding="utf-8")
+
         for candidate in candidate_payloads:
             candidate_index = int(candidate["candidate_index"])
             _log(f"Iteration {iteration_index + 1}: candidate {candidate_index + 1}/{batch_size}")
             payload = candidate["payload"]
             updates = _render_candidate_source(adapter, task_names, payload, all_tasks_mode)
-            rendered_source = adapter.render_source(updates)
+            rendered_source = adapter.render_source(updates, baseline_text=_template_base)
             candidate_cpp = temp_root / f"iter_{iteration_index:04d}" / f"candidate_{candidate_index:02d}" / "fcns.cpp"
             candidate_cpp.parent.mkdir(parents=True, exist_ok=True)
             candidate_cpp.write_text(rendered_source, encoding="utf-8")
@@ -1132,9 +1141,11 @@ def main(args: argparse.Namespace) -> None:
             run_label=run_id,
         )
 
-        _log(f"[Iteration {iteration_index}] Updating template with latest local iteration code for incremental search.")
         TEMPLATE_CPP.parent.mkdir(parents=True, exist_ok=True)
-        TEMPLATE_CPP.write_text(global_best_state["rendered_source"], encoding="utf-8")
+        TEMPLATE_CPP.write_text(
+            adapter.render_source(global_best_state["updates"], keep_markers=True),
+            encoding="utf-8",
+        )
 
         _write_progress(
             results_root,

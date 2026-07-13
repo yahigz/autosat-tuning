@@ -66,6 +66,7 @@ class MarkerSolverAdapter:
         updates: Mapping[str, str],
         substitutions: Mapping[str, Any] | None = None,
         baseline_text: str | None = None,
+        keep_markers: bool = False,
     ) -> str:
         text = baseline_text if baseline_text is not None else self.baseline_text()
 
@@ -74,7 +75,11 @@ class MarkerSolverAdapter:
             pattern = self._section_pattern(task_name)
             if not pattern.search(text):
                 return
-            text = pattern.sub(replacement.strip(), text, count=1)
+            if keep_markers:
+                marker = f"// <--{task_name}-->"
+                text = pattern.sub(f"{marker}\n{replacement.strip()}\n{marker}", text, count=1)
+            else:
+                text = pattern.sub(replacement.strip(), text, count=1)
 
         for task_name in self.task_names():
             provided = str(updates.get(task_name, "") or "").strip()
