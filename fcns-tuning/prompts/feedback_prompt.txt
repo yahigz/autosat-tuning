@@ -27,6 +27,8 @@ Return empty string in `exploration_code` if you have no new statistics to propo
 
 HERE YOU NEED TO PROVIDE ONLY THE FUNCTION: NO EXTRA TEXT, JUST PYTHON CODE.
 
+The function will be run on each training graph. Results are aggregated and shown to you in future iterations to help you understand the data distribution. Don't be afraid to calculate stats with high cyclomatic complexity.
+
 {% endif %}
 Your code must be wrapped as:
 // start
