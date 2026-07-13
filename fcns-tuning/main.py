@@ -64,6 +64,7 @@ class InstanceRun:
     name: str
     final_colors: int
     final_time: float
+    greedy_valid: bool
     par2: float
     timed_out: bool
     trace: list[dict[str, Any]]
@@ -359,6 +360,7 @@ def _run_solver(executable_path: Path, instance: GraphInstance, timeout_s: float
     stdout_lines = [line.strip() for line in stdout_text.splitlines() if line.strip()]
     final_colors = instance.n
     final_time = time.perf_counter() - start_perf
+    greedy_valid = True
     if stdout_lines:
         try:
             final_colors = int(stdout_lines[0].split()[0])
@@ -367,6 +369,7 @@ def _run_solver(executable_path: Path, instance: GraphInstance, timeout_s: float
     if trace:
         color_points = [float(item["colors"]) for item in trace if isinstance(item.get("colors"), (int, float))]
         time_points = [float(item["elapsed"]) for item in trace if isinstance(item.get("elapsed"), (int, float))]
+        greedy_valid = any(item.get("greedy_valid") is False for item in trace)
         if color_points:
             final_colors = int(color_points[-1])
         if time_points:
@@ -376,6 +379,7 @@ def _run_solver(executable_path: Path, instance: GraphInstance, timeout_s: float
         name=instance.name,
         final_colors=final_colors,
         final_time=final_time,
+        greedy_valid=greedy_valid,
         trace=trace,
         stdout=stdout_text,
         stderr=stderr_lines,
@@ -424,6 +428,7 @@ def _evaluate_source(
             "total_time": total_time,
             "timed_out": timed_out,
             "par2": par2,
+            "greedy_valid": all(run.greedy_valid for run in runs),
         },
         runs,
     )
@@ -521,7 +526,8 @@ def _baseline_result(
             "final_time": run.final_time,
             "trace": run.trace,
             "timed_out": run.timed_out,
-            "par2": run.par2
+            "par2": run.par2,
+            "greedy_valid": run.greedy_valid,
         }
         for run in runs
     ], scale, run_label=str(getattr(args, "run_id", "")))
@@ -573,6 +579,7 @@ def _save_candidate_artifacts(
                 "exit_code": run.exit_code,
                 "timed_out": run.timed_out,
                 "par2": run.par2,
+                "greedy_valid": run.greedy_valid,
             },
         )
 
@@ -607,7 +614,7 @@ def _iter_prompt_context(
                     "reason": str(item.get("reason", "") or ""),
                 }
             )
-        return {"implementations": implementations, "colors": summary.get("total_colors") if summary else None, "par2": summary.get("par2") if summary else None, "timed_out": summary.get("timed_out") if summary else None, "time": summary.get("total_time") if summary else None}
+        return {"implementations": implementations, "colors": summary.get("total_colors") if summary else None, "par2": summary.get("par2") if summary else None, "timed_out": summary.get("timed_out") if summary else None, "time": summary.get("total_time") if summary else None, "greedy_valid": summary.get("greedy_valid") if summary else None}
     
     return {
         "code": str(payload.get("code", "") or ""),
@@ -617,6 +624,7 @@ def _iter_prompt_context(
         "par2": summary.get("par2") if summary else None,
         "time": summary.get("total_time") if summary else None,
         "timed_out": summary.get("timed_out") if summary else None,
+        "greedy_valid": summary.get("greedy_valid") if summary else None,
     }
 
 
@@ -1037,6 +1045,7 @@ def main(args: argparse.Namespace) -> None:
                         "trace": run.trace,
                         "final_timed_out": run.timed_out,
                         "final_par2": run.par2,
+                        "greedy_valid": run.greedy_valid,
                     }
                     for run in runs
                 ],

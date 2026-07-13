@@ -413,6 +413,21 @@ int count_used_colors(const vector<int>& colors) {
     return used;
 }
 
+bool check_coloring(const vector<vector<int>>& graph, const vector<int>& colors) {
+    int n = static_cast<int>(graph.size());
+    for (int v = 0; v < n; ++v) {
+        if (colors[v] < 0) {
+            return false;
+        }
+        for (int to : graph[v]) {
+            if (colors[to] == colors[v]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 vector<int> make_best_coloring(const vector<vector<int>>& graph,
                                const chrono::steady_clock::time_point& launch_time) {
     int m = 0;
@@ -423,6 +438,11 @@ vector<int> make_best_coloring(const vector<vector<int>>& graph,
     uint64_t base_seed = 51;
     vector<int> best = Solver(n, m, graph, n, base_seed).greedy_coloring(graph);
     int best_colors = count_used_colors(best);
+    bool greedy_coloring_is_valid = check_coloring(graph, best);
+    if (!greedy_coloring_is_valid) {
+        best_colors = graph.size();
+        cerr << "{\"greedy_valid\": false}" << endl;
+    }
 
     vector<int> b_values = {1, 2, 4, 6, 8, 15, 25, 40};
     sort(b_values.begin(), b_values.end());

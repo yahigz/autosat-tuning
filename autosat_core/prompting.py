@@ -212,6 +212,12 @@ def _format_last_iter_section(last_iter: Mapping[str, Any]) -> str:
     timed_out = last_iter.get("timed_out")
     if timed_out is not None:
         lines.append(f"Timed out: {timed_out}")
+    greedy_valid = last_iter.get("greedy_valid")
+    if greedy_valid is not None:
+        lines.append(
+            f"Greedy valid: {greedy_valid}"
+            f"NOTE: IF GREEDY IS INVALID, IT HAS NOT BEEN RUN, AND INITIAL COLORING WAS ALL VERTICES WITH DIFFERENT COLORS. FIX GREEDY IN THE NEXT ITERATION."
+        )
 
     impls = last_iter.get("implementations")
     if impls:
