@@ -493,8 +493,8 @@ def _query_llm_all(
 
 
 def _select_better(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
-    left_key = (left.get("timed_out", 0), float(left.get("total_colors", float("inf"))), float(left.get("total_time", float("inf"))))
-    right_key = (right.get("timed_out", 0), float(right.get("total_colors", float("inf"))), float(right.get("total_time", float("inf"))))
+    left_key = (left.get("greedy_valid", True), left.get("timed_out", 0), float(left.get("total_colors", float("inf"))), float(left.get("total_time", float("inf"))))
+    right_key = (right.get("greedy_valid", True), right.get("timed_out", 0), float(right.get("total_colors", float("inf"))), float(right.get("total_time", float("inf"))))
     return right_key < left_key
 
 
@@ -981,10 +981,16 @@ def main(args: argparse.Namespace) -> None:
         exploration_stats_section = _format_exploration_stats_section(exploration_state.get("accumulated", {})) if enable_exploration else ""
         best_results_section = _format_best_results_section(best_by_primary, best_by_secondary, primary_label, secondary_label, primary_objective) if iterations_log else ""
 
+        current_template_text = TEMPLATE_CPP.read_text(encoding="utf-8")
+        current_codes = {
+            name: adapter.extract_baseline_section(name, baseline_text=current_template_text) 
+            for name in task_names
+        }
+
         prompt_text = _build_prompt(
             prompt_feedback if iterations_log else prompt_original,
             task_specs,
-            baseline_codes,
+            current_codes,
             baseline_info={
                 "colors": baseline_summary.get("total_colors"),
                 "time": baseline_summary.get("total_time"),
@@ -1126,9 +1132,9 @@ def main(args: argparse.Namespace) -> None:
             run_label=run_id,
         )
 
-        if global_improved:
-            TEMPLATE_CPP.parent.mkdir(parents=True, exist_ok=True)
-            TEMPLATE_CPP.write_text(global_best_state["rendered_source"], encoding="utf-8")
+        _log(f"[Iteration {iteration_index}] Updating template with latest local iteration code for incremental search.")
+        TEMPLATE_CPP.parent.mkdir(parents=True, exist_ok=True)
+        TEMPLATE_CPP.write_text(global_best_state["rendered_source"], encoding="utf-8")
 
         _write_progress(
             results_root,
