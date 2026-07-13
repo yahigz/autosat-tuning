@@ -72,8 +72,12 @@ def build_tool_schema_all(tasks, fields=None, enable_exploration: bool = False):
         schema["input_schema"]["properties"]["exploration_code"] = {
             "type": "string",
             "description": (
-                "Python function `def get_statistics(n: int, m: int, adj_list: list[list[int]]) -> dict[str, float]`"
-                " that computes NEW numerical statistics about the graph. Return empty string if no new stats."
+                "CRITICAL: Contains ONLY valid, runnable Python code. "
+                "Do NOT add markdown fences, DO NOT add C++ comments (like //), "
+                "DO NOT add explanations or prose. If no new statistics are needed, "
+                "return a completely empty string.\n"
+                "Function signature must be exactly:\n"
+                "def get_statistics(n: int, m: int, adj_list: list[list[int]]) -> dict[str, float]:"
             ),
         }
         schema["input_schema"]["required"] = list(schema["input_schema"].get("required", [])) + ["exploration_code"]

@@ -15,22 +15,6 @@ Your code must be wrapped as:
 <your implementation>
 // end
 
-{% if exploration_stats_section %}
-Additionally, provide an `exploration_code` field containing a Python function that computes NEW graph statistics.
-The function signature must be exactly:
-  def get_statistics(n: int, m: int, adj_list: list[list[int]]) -> dict[str, float]:
-      # n: number of vertices, m: number of edges
-      # adj_list: 0-indexed adjacency list (adj_list[i] = list of neighbors of vertex i)
-      # return: dict of NUMERICAL statistics (all values must be int or float)
-
-HERE YOU NEED TO PROVIDE ONLY THE FUNCTION: NO EXTRA TEXT, JUST PYTHON CODE.
-
-The function will be run on each training sample. Results are aggregated and shown to you in future iterations to help you understand the data distribution. Don't be afraid to calculate stats with high cyclomatic complexity.
-I highly recommend to use it, it can give you some important context.
-If exploration_stats_section is empty (first iteration), invent useful graph statistics (e.g. avg degree, density, clustering, degree variance).
-
-
-{% endif %}
 Tips:
 1) Write valid C++ (no pseudocode, no markdown fences inside the code).
 2) Before finalizing, perform a strict C++ syntax self-check: balanced braces/parentheses, semicolons, valid declarations.
@@ -40,6 +24,24 @@ Tips:
 6) In field reason try to elaborate on ideas which have led you to the new implementation.
 7) Check that all of your variables which are being used were declared before the use.
 8) Check that the code you've provided is compilable
+
+{% if exploration_stats_section %}
+### Python Graph Exploration Tasks:
+You can use the `exploration_code` field to write a Python function for data analysis.
+- If you want to propose NEW features/metrics to compute on training graphs, provide ONLY the raw Python code of the `get_statistics` function.
+- If you have no new features to add or don't need any metrics this turn, leave the `exploration_code` field COMPLETELY EMPTY ("").
+- DO NOT write text, explanations, or C++ blocks inside `exploration_code`. Write all your thoughts inside the "reason" fields of your implementations instead.
+
+The function signature must be exactly:
+  def get_statistics(n: int, m: int, adj_list: list[list[int]]) -> dict[str, float]:
+      # n: number of vertices, m: number of edges
+      # adj_list: 0-indexed adjacency list (adj_list[i] = list of neighbors of vertex i)
+      # return: dict of NUMERICAL statistics (all values must be int or float)
+
+The function will be run on each training sample. Results are aggregated and shown to you in future iterations to help you understand the data distribution. Don't be afraid to calculate stats with high cyclomatic complexity.
+If exploration_stats_section is empty (first iteration), invent useful graph statistics (e.g. avg degree, density, clustering, degree variance). I strongly confident that some stats might be useful for you to invent a new better heuristic.
+
+{% endif %}
 
 # Code of the FCNS graph colouring solver:
 
