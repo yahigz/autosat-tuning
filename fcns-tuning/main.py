@@ -868,7 +868,10 @@ def main(args: argparse.Namespace) -> None:
 
     if bool(config_payload.get("enable_server", False)):
         server_port = int(config_payload.get("server_port", getattr(args, "server_port", 8080)) or 8080)
-        start_server(port=server_port, progress_file=str(results_root / "progress.json"))
+        try:
+            start_server(port=server_port, progress_file=str(results_root / "progress.json"))
+        except OSError as exc:
+            _log(f"[Server] Could not start on port {server_port}: {exc}. Continuing without dashboard.")
 
     if bool(config_payload.get("resume_from_checkpoint", True)):
         checkpoint = _load_checkpoint(checkpoint_dir)
@@ -1076,10 +1079,20 @@ def main(args: argparse.Namespace) -> None:
                     }
                     _atomic_write_json(results_root / "exploration_stats.json", exploration_state)
 
+        _best_payload = best_candidate["payload"]
+        if all_tasks_mode:
+            _first_impl = _best_payload.get(task_names[0], {}) if task_names else {}
+        else:
+            _first_impl = _best_payload
+        _first_impl = _first_impl if isinstance(_first_impl, Mapping) else {}
         iterations_log.append(
             {
                 "iteration": iteration_index,
+                "iter": iteration_index,
                 "task_mode": current_mode,
+                "task": current_mode,
+                "title": str(_first_impl.get("title", "") or ""),
+                "reason": str(_first_impl.get("reason", "") or ""),
                 "best_summary": best_candidate["summary"],
                 "best_updates": best_candidate["updates"],
                 "best_code": best_candidate["rendered_source"],
